@@ -192,6 +192,21 @@ class ProductPromoActionTests extends OFBizTestCase {
     }
 
     /**
+     * Ensure order percent discount honors max discount amount
+     */
+    void testProductOrderPercentMaxDiscount() {
+        ShoppingCart cart = loadOrder('DEMO10090')
+
+        Map<String, Object> serviceContext = prepareConditionMap(cart, 15, false)
+        serviceContext.productPromoAction.maxDiscountAmount = BigDecimal.ONE
+        Map<String, Object> serviceResult = dispatcher.runSync('productPromoActOrderPercent', serviceContext)
+
+        assert ServiceUtil.isSuccess(serviceResult)
+        assert serviceResult.actionResultInfo.ranAction
+        assert serviceResult.actionResultInfo.totalDiscountAmount == BigDecimal.ONE.negate()
+    }
+
+    /**
      * This test check if the function productPromoActProdPrice work correctly
      *  1. test failed with passing non valid value
      *  2. test success if promo is applied
