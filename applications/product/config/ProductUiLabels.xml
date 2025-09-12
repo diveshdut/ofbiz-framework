@@ -1,3 +1,12 @@
     <property key="ProductMaxDiscountAmount">
         <value xml:lang="en">Max Discount Amount</value>
     </property>
+        <value xml:lang="de">Max. Rabattbetrag</value>
+        <value xml:lang="es">Importe máximo de descuento</value>
+        <value xml:lang="fr">Montant maximum de remise</value>
+        <value xml:lang="it">Importo massimo sconto</value>
+        <value xml:lang="ja">最大割引額</value>
+        <value xml:lang="th">จำนวนส่วนลดสูงสุด</value>
+        <value xml:lang="vi">Số tiền giảm giá tối đa</value>
+        <value xml:lang="zh">最大折扣金额</value>
+        <value xml:lang="zh-TW">最大折扣金額</value>
