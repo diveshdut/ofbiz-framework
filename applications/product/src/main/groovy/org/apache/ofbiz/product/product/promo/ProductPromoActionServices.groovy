@@ -443,6 +443,10 @@ Map productOrderPercent() {
     } else {
         amount = cart.getSubTotalForPromotions() * percentage
     }
+    BigDecimal maxDiscountAmount = productPromoAction.maxDiscountAmount ? productPromoAction.getBigDecimal('maxDiscountAmount') : BigDecimal.ZERO
+    if (maxDiscountAmount > BigDecimal.ZERO && amount.negate().compareTo(maxDiscountAmount) > 0) {
+        amount = maxDiscountAmount.negate()
+    }
     if (amount != 0) {
         ProductPromoWorker.doOrderPromoAction(productPromoAction, cart, amount, 'amount', delegator)
         actionResultInfo.ranAction = true
