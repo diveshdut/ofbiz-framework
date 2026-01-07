@@ -307,6 +307,8 @@ sourceSets {
             include 'org/apache/ofbiz/base/util/string/FlexibleStringExpanderBaseCodeTests.groovy'
             include 'org/apache/ofbiz/base/util/FileUtilTests.groovy'
             include 'org/apache/ofbiz/service/test/ServicePurgeTest.groovy'
+            include 'org/apache/ofbiz/base/util/UtilCacheTest.groovy'
+            include 'org/apache/ofbiz/base/util/tool/UtilCacheTestTools.groovy'
             include 'org.apache.ofbiz.base.test.SimpleTests.groovy'
         }
         resources {
