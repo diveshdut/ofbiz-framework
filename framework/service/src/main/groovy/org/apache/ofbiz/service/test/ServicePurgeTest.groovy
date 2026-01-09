@@ -32,7 +32,6 @@ class ServicePurgeTest  extends OFBizTestCase {
         super(name)
     }
 
-
     void testRuntimeDataIsCleanedAfterServicePurge() {
         GenericValue sysUserLogin = delegator.findOne('UserLogin', true, 'userLoginId', 'system')
         String jobId = delegator.getNextSeqId('JobSandbox')

@@ -16,11 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
 */
-
 package org.apache.ofbiz.service.test
 
 // Despite it's name, this class is not for test, it's only services
-
 
 Map testPingSuccess() {
     Map returnMap = success('Service result success')
