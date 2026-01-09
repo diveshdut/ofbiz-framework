@@ -1,4 +1,4 @@
-/*
+/*******************************************************************************
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,24 +15,33 @@
  * KIND, either express or implied.  See the License for the
  * specific language governing permissions and limitations
  * under the License.
- */
-package org.apache.ofbiz.service.test;
+*/
 
-import java.util.Map;
+package org.apache.ofbiz.service.test
 
-import org.apache.ofbiz.service.DispatchContext;
-import org.apache.ofbiz.service.ServiceUtil;
+// Despite it's name, this class is not for test, it's only services
 
-public class ServiceEngineTestPermissionServices {
 
-    public static Map<String, Object> genericTestService(DispatchContext dctx, Map<String, ? extends Object> context) {
-        return ServiceUtil.returnSuccess();
+Map testPingSuccess() {
+    Map returnMap = success('Service result success')
+    if (parameters.ping) {
+        returnMap.pong = parameters.ping
     }
+    return returnMap
+}
 
-    public static Map<String, Object> testPermissionPing(DispatchContext dctx, Map<String, ? extends Object> context) {
-        Map<String, Object> result = ServiceUtil.returnSuccess();
-        result.put("hasPermission", "Y".equalsIgnoreCase((String) context.get("givePermission")));
-        return result;
+Map testPingError() {
+    Map returnMap = error('Service result error')
+    if (parameters.ping) {
+        returnMap.pong = parameters.ping
     }
+    return returnMap
+}
 
+Map testPingSuccessWithDSLCall() {
+    run service: 'testGroovyPingSuccess', with: parameters
+}
+
+Map testPingErrorWithDSLCall() {
+    run service: 'testGroovyPingError', with: parameters
 }
