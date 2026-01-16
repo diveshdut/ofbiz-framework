@@ -84,8 +84,8 @@ import org.apache.ofbiz.base.util.UtilValidate;
 import org.apache.ofbiz.base.util.UtilXml;
 import org.apache.ofbiz.entity.Delegator;
 import org.apache.ofbiz.entity.util.EntityUtilProperties;
-import org.apache.pdfbox.io.RandomAccessReadBufferedFile;
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.io.RandomAccessReadBufferedFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
 //import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
@@ -593,6 +593,9 @@ public class SecuredUpload {
                     } else if (inflater.needsDictionary()) { // Dictionary to be loaded
                         inflater.setDictionary(result);
                         inflater.getAdler();
+                    } else { // nothing to inflate, avoid endless loop
+                        inflater.end();
+                        return true;
                     }
                 }
             }
