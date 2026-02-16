@@ -126,7 +126,8 @@ under the License.
                 <#assign check = "false"/>
             </#if>
             <#assign curEntityName = modelEntity.getEntityName()/>
-            <td><input type="checkbox" name="entityName" value="${curEntityName}"<#if check="true"> checked="checked"</#if>/>${curEntityName}</td>
+            <#assign isViewEntity = (modelEntity.getClass().getName() == "org.apache.ofbiz.entity.model.ModelViewEntity")/>
+            <td><input type="checkbox" name="entityName" value="${curEntityName}"<#if check="true"> checked="checked"</#if>/>${curEntityName}<#if isViewEntity> (View Entity)</#if></td>
           </#list>
         </tr>
       </table>

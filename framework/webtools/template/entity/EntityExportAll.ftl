@@ -48,6 +48,14 @@ under the License.
             </tr>
             <tr>
                 <td class="label">
+                    <label>${uiLabelMap.CommonThruDate}</label>
+                </td>
+                <td>
+                    <@htmlTemplate.renderDateTimeField name="thruDate" event="" action="" className="" title="Format: yyyy-MM-dd HH:mm:ss.SSS" value="" size="25" maxlength="30" id="thruDate" isDateType=true shortDateInput=false timeDropdownParamName="" defaultDateTimeString="" localizedIconTitle="" timeDropdown="" timeHourName="" classString="" hour1="" hour2="" timeMinutesName="" minutes="" isTwelveHour="" ampmName="" amSelected="" pmSelected="" compositeType="" formName=""/>
+                </td>
+            </tr>
+            <tr>
+                <td class="label">
                     ${uiLabelMap.WebtoolsTimeoutSeconds}: 
                 </td>
                 <td>
