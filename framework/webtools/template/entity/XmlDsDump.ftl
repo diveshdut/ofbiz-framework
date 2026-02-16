@@ -59,7 +59,7 @@ under the License.
     <table class="basic-table">
       <tr>
         <td class="label">${uiLabelMap.WebtoolsOutputDirectory}</td>
-        <td><input type="text" size="60" name="outpath" value="${parameters.outpath!}"/></td>
+        <td><input type="text" size="60" name="outpath" value="${parameters.outpath!}"/> ${uiLabelMap.WebtoolsDefaultsToOfbizRootDirectory}</td>
       </tr>
       <tr>
         <td class="label">${uiLabelMap.WebtoolsMaxRecordsPerFile}</td>
@@ -67,7 +67,7 @@ under the License.
       </tr>
       <tr>
         <td class="label">${uiLabelMap.WebtoolsSingleFilename}</td>
-        <td><input type="text" size="60" name="filename" value="${parameters.filename!}"/></td>
+        <td><input type="text" size="60" name="filename" value="${parameters.filename!}"/> ${uiLabelMap.WebtoolsDefaultsToOfbizRootDirectory}</td>
       </tr>
       <tr>
         <td class="label">${uiLabelMap.WebtoolsRecordsUpdatedSince}</td>

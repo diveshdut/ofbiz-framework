@@ -36,6 +36,7 @@ under the License.
                 </td>
                 <td>
                     <input type="text" size="25" name="outpath" value="${outpath!}" />
+                    ${uiLabelMap.WebtoolsDefaultsToOfbizRootDirectory}
                 </td>
             </tr>
             <tr>
