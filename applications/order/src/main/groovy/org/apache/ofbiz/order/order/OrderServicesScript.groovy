@@ -18,6 +18,8 @@
 */
 package org.apache.ofbiz.order.order
 
+import java.sql.Timestamp
+
 import org.apache.ofbiz.base.util.GeneralException
 import org.apache.ofbiz.base.util.ObjectType
 import org.apache.ofbiz.base.util.UtilDateTime
@@ -28,9 +30,9 @@ import org.apache.ofbiz.entity.condition.EntityConditionBuilder
 import org.apache.ofbiz.entity.condition.EntityOperator
 import org.apache.ofbiz.order.customer.CheckoutMapProcs
 import org.apache.ofbiz.order.shoppingcart.ShoppingCart
+import org.apache.ofbiz.order.shoppingcart.ShoppingCart.CartShipInfo
 import org.apache.ofbiz.order.shoppingcart.ShoppingCartItem
 
-import java.sql.Timestamp
 /**
  * Service to create OrderHeader
  */
@@ -213,7 +215,7 @@ Map recreateOrderAdjustments() {
             // a new order item is created
             GenericValue newOrderItem = makeValue('OrderItem')
             newOrderItem.with {
-                orderId = order.get("orderId")
+                orderId = order.get('orderId')
                 orderItemTypeId = item.getItemType()
                 selectedAmount = item.getSelectedAmount()
                 unitPrice = item.getBasePrice()
@@ -232,14 +234,14 @@ Map recreateOrderAdjustments() {
             // create the OrderItemShipGroupAssoc
             int itemIndex = cart.getItemIndex(item)
             int shipGroupIndex = cart.getItemShipGroupIndex(itemIndex)
-            def csi = cart.getShipInfo(shipGroupIndex)
-            String shipGroupSeqId = csi.getShipGroupSeqId()
+            CartShipInfo csi = cart.getShipInfo(shipGroupIndex)
+            String shipGroupSeqIdExt = csi.getShipGroupSeqId()
 
             GenericValue newOisga = makeValue('OrderItemShipGroupAssoc')
             newOisga.with {
                 orderId = order.orderId
                 orderItemSeqId = newOrderItem.orderItemSeqId
-                shipGroupSeqId = shipGroupSeqId
+                shipGroupSeqId = shipGroupSeqIdExt
                 quantity = newOrderItem.quantity
             }
             newOisga.create()
