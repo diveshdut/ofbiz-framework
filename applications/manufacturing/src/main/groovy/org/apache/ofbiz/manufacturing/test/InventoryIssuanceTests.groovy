@@ -5,23 +5,18 @@ import org.apache.ofbiz.entity.condition.EntityCondition
 import org.apache.ofbiz.entity.condition.EntityOperator
 import org.apache.ofbiz.service.ServiceUtil
 import org.apache.ofbiz.service.testtools.OFBizTestCase
-import java.sql.Timestamp
-import java.math.BigDecimal
 import java.math.RoundingMode
 import org.apache.ofbiz.base.util.Debug
 import org.apache.ofbiz.base.util.UtilDateTime
-import org.apache.ofbiz.base.util.UtilMisc
 
-class InventoryIssuanceTests extends OFBizTestCase {
+class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
 
-    InventoryIssuanceTests(String name) {
+    public InventoryIssuanceTests(String name) {
         super(name)
     }
 
-    protected GenericValue userLogin
-
     @Override
-    protected void setUp() throws Exception {
+    void setUp() {
         super.setUp()
         userLogin = from('UserLogin').where('userLoginId', 'system').queryOne()
 
@@ -34,6 +29,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
         delegator.removeByCondition('InventoryItem',
                 EntityCondition.makeCondition('inventoryItemId', EntityOperator.LIKE, 'II_%'))
 
+        ensureProductBackbone()
         ensureFacilityPolicies()
         delegator.clearAllCaches()
         Debug.logInfo('InventoryIssuanceTests: Environment purged for II_% items.', 'InventoryIssuanceTests')
@@ -43,7 +39,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
     void testS1_1_StrictIssuanceFailure() {
         String facId = 'WH_S1_1'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S1_1', 100.0)
         // Request PR for 60 units (Needs 120 MAT_A).
@@ -58,7 +54,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
     void testS1_2_ForceWithTheft() {
         String facId = 'WH_S1_2'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S1_2', 100.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S1_2', 100.0)
@@ -83,25 +79,24 @@ class InventoryIssuanceTests extends OFBizTestCase {
         // Verify Victim's Backorder
         GenericValue victimRes = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST')
                 .queryFirst()
-        assertEquals('Victim should be backordered by 50', 50.0,
-                victimRes.getBigDecimal('quantityNotAvailable').doubleValue(), 0.001)
+        assert scaleQuantity(victimRes.getBigDecimal('quantityNotAvailable')) == scaleQuantity(50.0) : 'Victim should be backordered by 50'
     }
 
     // --- Category 4: Real-time Reconciliation (SECA) ---
 
     void testS4_1_RealTimeReconciliationOnReceipt() {
         String facId = 'WH_RECON_Y'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'])
 
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_RECON', 0.0)
         String weId = setUpProductionRun('II_PROD_MANUF', 20.0, facId)
 
         GenericValue res = from('WorkEffortInvRes').where('workEffortId', weId, 'productId', 'II_MAT_C_COST').queryFirst()
-        assertNotNull('Reservation should exist', res)
-        assertEquals('Should be 20 backordered initially', 20.0,
-                (res.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO).doubleValue(), 0.001)
-        assertNotNull('Backorder should be anchored to a logical inventory item', res.inventoryItemId)
+        assert res != null : 'Reservation should exist'
+        assert scaleQuantity(res.getBigDecimal('quantityNotAvailable')) == scaleQuantity(20.0) :
+                'Should be 20 backordered initially'
+        assert res.inventoryItemId != null : 'Backorder should be anchored to a logical inventory item'
 
         String newItemId = 'II_MAT_C_RECON_RCPT'
         delegator.create('InventoryItem', [
@@ -120,67 +115,67 @@ class InventoryIssuanceTests extends OFBizTestCase {
         assertTrinityOfTruth('II_MAT_C_COST', weId, 0.0, 20.0, 30.0, facId)
 
         res = from('WorkEffortInvRes').where('workEffortId', weId, 'productId', 'II_MAT_C_COST').queryFirst()
-        assertEquals('Reservation should now be fully available (QNA=0)', 0.0,
-                (res.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO).doubleValue(), 0.001)
-        assertEquals('Reservation should be tied to the newly received item', newItemId, res.inventoryItemId)
+        assert scaleQuantity(res.getBigDecimal('quantityNotAvailable')) == scaleQuantity(0.0) :
+                'Reservation should now be fully available (QNA=0)'
+        assert res.inventoryItemId == newItemId : 'Reservation should be tied to the newly received item'
     }
 
     void testS4_2_ProductionChainAutoSatisfaction() {
         String facId = 'WH_CHAIN_RECON'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'])
 
         setUpInventory(facId, 'II_MAT_E_RAW', 'II_MAT_E_RAW_S4_2', 100.0)
         setUpInventory(facId, 'II_MAT_D_PRODUCED', 'II_MAT_D_RECON', 0.0)
 
-        String prA_TaskId = setUpProductionRun('II_PROD_CHAIN', 10.0, facId)
+        String prATaskId = setUpProductionRun('II_PROD_CHAIN', 10.0, facId)
 
-        GenericValue resA = from('WorkEffortInvRes').where('workEffortId', prA_TaskId, 'productId', 'II_MAT_D_PRODUCED').queryFirst()
-        assertNotNull('Reservation for PR-A should exist', resA)
-        assertEquals('PR-A should be backordered for 10 units', 10.0,
-                (resA.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO).doubleValue(), 0.001)
+        GenericValue resA = from('WorkEffortInvRes').where('workEffortId', prATaskId, 'productId', 'II_MAT_D_PRODUCED').queryFirst()
+        assert resA != null : 'Reservation for PR-A should exist'
+        assert scaleQuantity(resA.getBigDecimal('quantityNotAvailable')) == scaleQuantity(10.0) :
+                'PR-A should be backordered for 10 units'
 
-        String prB_TaskId = setUpProductionRun('II_MAT_D_PRODUCED', 15.0, facId)
-        GenericValue taskB = from('WorkEffort').where('workEffortId', prB_TaskId).queryOne()
-        String prB_Id = taskB.workEffortParentId
+        String prBTaskId = setUpProductionRun('II_MAT_D_PRODUCED', 15.0, facId)
+        GenericValue taskB = from('WorkEffort').where('workEffortId', prBTaskId).queryOne()
+        String prBId = taskB.workEffortParentId
 
         dispatcher.runSync('changeProductionRunTaskStatus', [
-            productionRunId: prB_Id, workEffortId: prB_TaskId,
+            productionRunId: prBId, workEffortId: prBTaskId,
             statusId: 'PRUN_RUNNING', userLogin: userLogin
         ])
 
-        GenericValue resB = from('WorkEffortInvRes').where('workEffortId', prB_TaskId, 'productId', 'II_MAT_E_RAW').queryFirst()
-        assertNotNull('Reservation for PR-B should exist', resB)
+        GenericValue resB = from('WorkEffortInvRes').where('workEffortId', prBTaskId, 'productId', 'II_MAT_E_RAW').queryFirst()
+        assert resB != null : 'Reservation for PR-B should exist'
 
         Map issueResult = dispatcher.runSync('issueProductionRunTask', [
-            workEffortId: prB_TaskId, userLogin: userLogin
+            workEffortId: prBTaskId, userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(issueResult)
 
         dispatcher.runSync('changeProductionRunTaskStatus', [
-            productionRunId: prB_Id, workEffortId: prB_TaskId,
+            productionRunId: prBId, workEffortId: prBTaskId,
             statusId: 'PRUN_COMPLETED', userLogin: userLogin
         ])
 
         Map produceResult = dispatcher.runSync('productionRunProduce', [
-            workEffortId: prB_Id, quantity: 15.0, userLogin: userLogin
+            workEffortId: prBId, quantity: 15.0, userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(produceResult)
         String newInventoryItemId = ((List) produceResult.inventoryItemIds)[0]
 
-        resA = from('WorkEffortInvRes').where('workEffortId', prA_TaskId, 'productId', 'II_MAT_D_PRODUCED').queryFirst()
-        assertEquals('PR-A\'s reservation should now be satisfied (QNA=0)', 0.0,
-                (resA.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO).doubleValue(), 0.001)
-        assertEquals('PR-A\'s reservation should be tied to the item produced by PR-B', newInventoryItemId, resA.inventoryItemId)
+        resA = from('WorkEffortInvRes').where('workEffortId', prATaskId, 'productId', 'II_MAT_D_PRODUCED').queryFirst()
+        assert scaleQuantity(resA.getBigDecimal('quantityNotAvailable')) == scaleQuantity(0.0) :
+                'PR-A\'s reservation should now be satisfied (QNA=0)'
+        assert resA.inventoryItemId == newInventoryItemId : 'PR-A\'s reservation should be tied to the item produced by PR-B'
 
-        assertTrinityOfTruth('II_MAT_D_PRODUCED', prA_TaskId, 0.0, 10.0, 5.0, facId)
+        assertTrinityOfTruth('II_MAT_D_PRODUCED', prATaskId, 0.0, 10.0, 5.0, facId)
     }
 
     // --- Category 3: Backorders & Residuals ---
 
     void testS3_2_NegativeReservationResolution() {
         String facId = 'WH_S3_2'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
 
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S3_2', 100.0)
@@ -188,8 +183,8 @@ class InventoryIssuanceTests extends OFBizTestCase {
         String weId = setUpProductionRun('II_PROD_MANUF', 20.0, facId)
 
         GenericValue res = from('WorkEffortInvRes').where('workEffortId', weId, 'productId', 'II_MAT_C_COST').queryFirst()
-        assertEquals('Initial state should be 20 backordered', 20.0,
-                (res.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO).doubleValue(), 0.001)
+        assert scaleQuantity(res.getBigDecimal('quantityNotAvailable')) == scaleQuantity(20.0) :
+                'Initial state should be 20 backordered'
 
         dispatcher.runSync('createInventoryItemDetail', [
                 inventoryItemId: 'II_MAT_C_S3_2', quantityOnHandDiff: 50.0,
@@ -206,7 +201,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
     void testS3_4_ImpactPlanAudit() {
         String facId = 'WH_S3_4'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S3_4', 100.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S3_4', 100.0)
@@ -226,17 +221,17 @@ class InventoryIssuanceTests extends OFBizTestCase {
         List issuePlan = (List) impactResult.inventoryIssuePlan
 
         BigDecimal totalImpact = impactList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.quantity ?: BigDecimal.ZERO) }
-        assertEquals('Thief should steal 15 units', 15.0, totalImpact.doubleValue(), 0.001)
-        assertEquals('Pool should have 0 available', 0, issuePlan.size())
+        assert scaleQuantity(totalImpact) == scaleQuantity(15.0) : 'Thief should steal 15 units'
+        assert issuePlan.size() == 0 : 'Pool should have 0 available'
 
         Map v1Impact = (Map) impactList.find { it.victimWorkEffortId == v1 }
-        assertNotNull('Victim 1 should be in the Impact List', v1Impact)
-        assertEquals('Victim 1 impact type should be STOLEN', 'STOLEN', v1Impact.type)
+        assert v1Impact != null : 'Victim 1 should be in the Impact List'
+        assert v1Impact.type == 'STOLEN' : 'Victim 1 impact type should be STOLEN'
     }
 
     void testS3_5_VictimSanityGuard() {
         String facId = 'WH_S3_5'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S3_5', 20.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S3_5', 100.0)
@@ -248,7 +243,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
         ])
 
         int resCount = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryCount()
-        assertEquals('Victim should have 2 records (Dirty State)', 2, resCount)
+        assert resCount == 2 : 'Victim should have 2 records (Dirty State)'
 
         String thiefWeId = setUpProductionRun('II_PROD_MANUF', 5.0, facId)
 
@@ -263,16 +258,16 @@ class InventoryIssuanceTests extends OFBizTestCase {
         assert ServiceUtil.isSuccess(reallocResult)
 
         int finalResCount = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryCount()
-        assertEquals('Victim should now have exactly 1 record (Sanity Guard worked)', 1, finalResCount)
+        assert finalResCount == 1 : 'Victim should now have exactly 1 record (Sanity Guard worked)'
 
         GenericValue remainingRes = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryFirst()
         BigDecimal totalCommited = (remainingRes.getBigDecimal('quantity') ?: BigDecimal.ZERO)
-        assertEquals('Total commitment should match Requirement (20)', 20.0, totalCommited.doubleValue(), 0.001)
+        assert scaleQuantity(totalCommited) == scaleQuantity(20.0) : 'Total commitment should match Requirement (20)'
     }
 
     void testS3_6_ExplicitReallocationWorkflow() {
         String facId = 'WH_S3_6'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S3_6', 100.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S3_6', 100.0)
@@ -288,7 +283,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
         assert ServiceUtil.isSuccess(impactResult)
         List impactList = (List) impactResult.impactList
         BigDecimal plannedTheft = impactList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.quantity ?: BigDecimal.ZERO) }
-        assertEquals('Audit should plan to steal 50 units', 50.0, plannedTheft.doubleValue(), 0.001)
+        assert scaleQuantity(plannedTheft) == scaleQuantity(50.0) : 'Audit should plan to steal 50 units'
 
         Map reallocResult = dispatcher.runSync('reallocateAndIssueInventory', [
             workEffortId: thiefWeId, impactList: impactList, userLogin: userLogin
@@ -299,16 +294,16 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
         List victimResList = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryList()
         BigDecimal victimQna = victimResList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantityNotAvailable') ?: 0) }
-        assertEquals('Victim should be backordered by 50 units', 50.0, victimQna.doubleValue(), 0.001)
+        assert scaleQuantity(victimQna) == scaleQuantity(50.0) : 'Victim should be backordered by 50 units'
 
         GenericValue invItem = from('InventoryItem').where('inventoryItemId', 'II_MAT_A_S3_6').queryOne()
-        assertEquals('Physical QOH should be 50', 50.0, invItem.getBigDecimal('quantityOnHandTotal').doubleValue(), 0.001)
-        assertEquals('Accounting Total should be 50', 50.0, invItem.getBigDecimal('accountingQuantityTotal').doubleValue(), 0.001)
+        assert scaleQuantity(invItem.getBigDecimal('quantityOnHandTotal')) == scaleQuantity(50.0) : 'Physical QOH should be 50'
+        assert scaleQuantity(invItem.getBigDecimal('accountingQuantityTotal')) == scaleQuantity(50.0) : 'Accounting Total should be 50'
     }
 
     void testS4_1_ReleaseWithRestore() {
         String facId = 'WH_S4_1'
-        createOrStoreFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S4_1', 100.0)
         String weId = setUpProductionRun('II_PROD_MANUF', 10.0, facId)
@@ -322,7 +317,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
         assert ServiceUtil.isSuccess(result)
 
         long countAfter = from('InventoryItemDetail').where('inventoryItemId', 'II_MAT_A_S4_1').queryCount()
-        assertEquals('InventoryItemDetail record should be created for restoration', countBefore + 1, countAfter)
+        assert countAfter == countBefore + 1 : 'InventoryItemDetail record should be created for restoration'
 
         GenericValue res = from('WorkEffortInvRes').where('workEffortId', weId, 'productId', 'II_MAT_A_COST').queryOne()
         assert res == null
@@ -344,7 +339,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
         assert ServiceUtil.isSuccess(result)
 
         long countAfter = from('InventoryItemDetail').where('inventoryItemId', reservedItemId).queryCount()
-        assertEquals('InventoryItemDetail record should NOT be created for satisfaction', countBefore, countAfter)
+        assert countAfter == countBefore : 'InventoryItemDetail record should NOT be created for satisfaction'
 
         GenericValue res = from('WorkEffortInvRes').where('workEffortId', weId, 'productId', 'II_MAT_A_COST').queryOne()
         assert res == null
@@ -367,8 +362,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
         ], 0, true)
 
         assert ServiceUtil.isError(result)
-        assertTrue('Error message should contain theft policy violation',
-                ServiceUtil.getErrorMessage(result).contains('forbids inventory theft'))
+        assert ServiceUtil.getErrorMessage(result).contains('forbids inventory theft') : 'Error message should contain theft policy violation'
     }
 
     void testS5_2_APIPolicyEnforcement() {
@@ -387,7 +381,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
         ], 0, true)
 
         assert ServiceUtil.isError(reallocResult)
-        assertTrue(reallocResult.errorMessage.contains('Policy Violation'))
+        assert reallocResult.errorMessage.contains('Policy Violation')
     }
 
     void testS5_3_NightlyReconciliation() {
@@ -413,16 +407,17 @@ class InventoryIssuanceTests extends OFBizTestCase {
         dispatcher.runSync('reconcileInventoryForProductionJobs', [userLogin: userLogin])
 
         GenericValue resA = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryFirst()
-        assertNotNull('Auditor reservation should exist', resA)
-        assertEquals('Auditor should have purged phantom debt', 0.0,
-                (resA.getBigDecimal('quantityNotAvailable') ?: 0).doubleValue(), 0.001)
+        assert resA != null : 'Auditor reservation should exist'
+        assert scaleQuantity(resA.getBigDecimal('quantityNotAvailable')) == scaleQuantity(0.0) :
+                'Auditor should have purged phantom debt'
 
         GenericValue boRes = from('WorkEffortInvRes').where('workEffortId', backorderWeId, 'productId', 'II_MAT_C_COST').queryFirst()
-        assertNotNull('Satisfier reservation should exist', boRes)
-        assertEquals('Satisfier should have settled the debt', 0.0,
-                (boRes.getBigDecimal('quantityNotAvailable') ?: 0).doubleValue(), 0.001)
-        assertEquals('Physical reservation should now be 5', 5.0,
-                (boRes.getBigDecimal('quantity') ?: 0).doubleValue(), 0.001)
+        assert boRes != null : 'Satisfier reservation should exist'
+        assert scaleQuantity(boRes.getBigDecimal('quantityNotAvailable')) == scaleQuantity(0.0) :
+                'Satisfier should have settled the debt'
+        assert scaleQuantity(boRes.getBigDecimal('quantity')) == scaleQuantity(5.0) :
+                'Physical reservation should now be 5'
+        assert (boRes.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO) == BigDecimal.ZERO
     }
 
     void testS5_4_ReconFluidPolicy() {
@@ -451,8 +446,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
         List resList = from('WorkEffortInvRes').where('workEffortId', victimWeId).queryList()
         BigDecimal totalQna = resList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantityNotAvailable') ?: 0) }
-        assertEquals('Aggressive Auditor should have purged excess logical debt to match estimate ceiling', 5.0,
-                totalQna.doubleValue(), 0.001)
+        assert scaleQuantity(totalQna) == scaleQuantity(5.0) : 'Aggressive Auditor should have purged excess logical debt to match estimate ceiling'
 
         dispatcher.runSync('createInventoryItemDetail', [
                 inventoryItemId: 'II_INV_FLUID_B_S5_4', quantityOnHandDiff: 20.0,
@@ -461,9 +455,9 @@ class InventoryIssuanceTests extends OFBizTestCase {
         dispatcher.runSync('reconcileInventoryForProductionJobs', [userLogin: userLogin])
 
         GenericValue boRes = from('WorkEffortInvRes').where('workEffortId', boWeId, 'productId', 'II_MAT_A_COST').queryFirst()
-        assertNotNull('Backorder reservation should exist for boWeId', boRes)
-        assertEquals('Satisfier should have settled the debt in Fluid Warehouse', 0.0,
-                (boRes.getBigDecimal('quantityNotAvailable') ?: 0).doubleValue(), 0.001)
+        assert boRes != null : 'Backorder reservation should exist for boWeId'
+        assert scaleQuantity(boRes.getBigDecimal('quantityNotAvailable')) == scaleQuantity(0.0) :
+                'Satisfier should have settled the debt in Fluid Warehouse'
     }
 
     void testS5_5_ReconTraditionalPolicy() {
@@ -497,14 +491,14 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
         GenericValue res = from('WorkEffortInvRes').where('workEffortId', weId, 'productId', 'II_MAT_A_COST',
                 'inventoryItemId', itemId).queryFirst()
-        assertNotNull('Reservation record should exist', res)
-        assertEquals('Conservative Auditor should have spared the scrap backorder', 2.0,
-                res.getBigDecimal('quantityNotAvailable').doubleValue(), 0.001)
+        assert res != null : 'Reservation record should exist'
+        assert scaleQuantity(res.getBigDecimal('quantityNotAvailable')) == scaleQuantity(2.0) :
+                'Conservative Auditor should have spared the scrap backorder'
 
         List boResList = from('WorkEffortInvRes').where('workEffortId', boWeId, 'productId', 'II_MAT_A_COST').queryList()
-        assertTrue('Reservation should exist for boWeId', !boResList.isEmpty())
+        assert !boResList.isEmpty() : 'Reservation should exist for boWeId'
         BigDecimal boQna = boResList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantityNotAvailable') ?: 0) }
-        assertEquals('Satisfier should NOT have settled in Traditional Warehouse', 2.0, boQna.doubleValue(), 0.001)
+        assert scaleQuantity(boQna) == scaleQuantity(2.0) : 'Satisfier should NOT have settled in Traditional Warehouse'
     }
 
     void testS5_6_ReconSafePolicy() {
@@ -533,11 +527,11 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
         List resList = from('WorkEffortInvRes').where('workEffortId', weId, 'productId', 'II_MAT_A_COST').queryList()
         BigDecimal totalQna = resList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantityNotAvailable') ?: 0) }
-        assertEquals('Safe Mode (Aggressive Auditor) should have purged the excess', 0.0, totalQna.doubleValue(), 0.001)
+        assert scaleQuantity(totalQna) == scaleQuantity(0.0) : 'Safe Mode (Aggressive Auditor) should have purged the excess'
 
         List boResList = from('WorkEffortInvRes').where('workEffortId', boWeId, 'productId', 'II_MAT_C_COST').queryList()
         BigDecimal boQna = boResList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantityNotAvailable') ?: 0) }
-        assertEquals('Safe Mode (Conservative Satisfier) should have healed backorder', 0.0, boQna.doubleValue(), 0.001)
+        assert scaleQuantity(boQna) == scaleQuantity(0.0) : 'Safe Mode (Conservative Satisfier) should have healed backorder'
     }
 
     void testM1_ManualLotTheftSuccess() {
@@ -560,7 +554,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
         assertTrinityOfTruth('II_MAT_A_COST', 'WE_ATTACKER_FLUID', 5.0, 0.0, 0.0, 'WH_FLUID')
         GenericValue victimRes = from('WorkEffortInvRes').where(workEffortId: 'WE_VICTIM').queryFirst()
-        assertEquals('Victim should be backordered by 5', 5.0, victimRes.getBigDecimal('quantityNotAvailable').doubleValue(), 0.001)
+        assert scaleQuantity(victimRes.getBigDecimal('quantityNotAvailable')) == scaleQuantity(5.0) : 'Victim should be backordered by 5'
     }
 
     void testM2_ManualForceNegative() {
@@ -574,7 +568,7 @@ class InventoryIssuanceTests extends OFBizTestCase {
         assert ServiceUtil.isSuccess(result)
 
         GenericValue item = from('InventoryItem').where(inventoryItemId: 'II_MAN_FLUID').queryOne()
-        assertEquals('QOH should be -10', -10.0, item.getBigDecimal('quantityOnHandTotal').doubleValue(), 0.001)
+        assert scaleQuantity(item.getBigDecimal('quantityOnHandTotal')) == scaleQuantity(-10.0) : 'QOH should be -10'
     }
 
     void testM3_UserStrictnessOverridesFacilityFluidity() {
@@ -594,8 +588,10 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
         assert ServiceUtil.isError(result)
         String error = ServiceUtil.getErrorMessage(result)
-        assertTrue("Error should contain 'Materials Not Available' or 'promised to other tasks'. Got: ${error}",
-            error.contains('Materials Not Available') || error.contains('shortfall') || error.contains('promised to other tasks'))
+        assert error.contains('Materials Not Available')
+                || error.contains('shortfall')
+                || error.contains('promised to other tasks') :
+                "Error should contain 'Materials Not Available' or 'promised to other tasks'. Got: ${error}"
     }
 
     void testM4_FacilityStrictnessOverridesUserFluidity() {
@@ -615,8 +611,10 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
         assert ServiceUtil.isError(result)
         String error = ServiceUtil.getErrorMessage(result)
-        assertTrue("Error should contain 'Materials Not Available' or 'forbids inventory theft'. Got: ${error}",
-            error.contains('Materials Not Available') || error.contains('shortfall') || error.contains('forbids inventory theft'))
+        assert error.contains('Materials Not Available')
+                || error.contains('shortfall')
+                || error.contains('forbids inventory theft') :
+                "Error should contain 'Materials Not Available' or 'forbids inventory theft'. Got: ${error}"
     }
 
     void testM6_SelfConsumptionSuccessInStrictMode() {
@@ -634,6 +632,75 @@ class InventoryIssuanceTests extends OFBizTestCase {
 
         assert ServiceUtil.isSuccess(result)
         assertTrinityOfTruth('II_MAT_A_COST', 'WE_ATTACKER_STRICT', 5.0, 5.0, 0.0, 'WH_TRADITIONAL')
+    }
+
+    void testS5_7_NullPolicyDefaultsToStrict() {
+        String facId = 'WH_NULL_POLICY'
+        storeFacility([
+            facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y'
+        ])
+
+        String thiefWeId = setUpProductionRun('II_PROD_MANUF', 10.0, facId)
+
+        Map impactResult = dispatcher.runSync('getProductionRunTaskForceIssueImpact', [
+            workEffortId: thiefWeId, facilityId: facId, productId: 'II_MAT_A_COST', userLogin: userLogin
+        ])
+
+        assert ServiceUtil.isSuccess(impactResult)
+        assert impactResult.policyViolation != null : 'Should contain a policyViolation message'
+        assert impactResult.policyViolation.contains('forbidden') : 'Message should explain that theft is forbidden'
+    }
+
+    void testFacilityPolicyPersistence() {
+        String facId = 'WH_POLICY_TEST'
+        storeFacility([
+            facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y',
+            allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'
+        ])
+
+        GenericValue facility = from('Facility').where('facilityId', facId).queryOne()
+        assert facility != null : 'Facility should be created'
+        assert facility.allowInventoryTheft == 'Y' : 'allowInventoryTheft should be Y'
+        assert facility.reconcilePrunBackorders == 'Y' : 'reconcilePrunBackorders should be Y'
+
+        facility.set('allowInventoryTheft', 'N')
+        facility.set('reconcilePrunBackorders', 'N')
+        facility.store()
+
+        facility.refresh()
+        assert facility.allowInventoryTheft == 'N' : 'allowInventoryTheft should be N after update'
+        assert facility.reconcilePrunBackorders == 'N' : 'reconcilePrunBackorders should be N after update'
+        assert facility.allowInventoryTheft == 'N'
+    }
+
+}
+
+class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
+
+    InventoryIssuancePolicyMatrixTests(String name) {
+        super(name)
+    }
+
+    @Override
+    void setUp() {
+        super.setUp()
+        userLogin = from('UserLogin').where('userLoginId', 'system').queryOne()
+
+        delegator.removeByCondition('WorkEffortInvRes', EntityCondition.makeCondition('productId', EntityOperator.LIKE, 'II_%'))
+        delegator.removeByCondition('WorkEffortInventoryAssign',
+                EntityCondition.makeCondition('inventoryItemId', EntityOperator.LIKE, 'II_%'))
+        delegator.removeByCondition('InventoryItemDetail',
+                EntityCondition.makeCondition('inventoryItemId', EntityOperator.LIKE, 'II_%'))
+        delegator.removeByCondition('InventoryItem',
+                EntityCondition.makeCondition('inventoryItemId', EntityOperator.LIKE, 'II_%'))
+
+        ensureProductBackbone()
+        ensureFacilityPolicies()
+        delegator.clearAllCaches()
+        Debug.logInfo('InventoryIssuancePolicyMatrixTests: Environment purged for II_% items.',
+                'InventoryIssuancePolicyMatrixTests')
     }
 
     void testS6_1_ManualReserve_IssueDefault_Success() {
@@ -765,166 +832,65 @@ class InventoryIssuanceTests extends OFBizTestCase {
         assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, -20.0, 'WH_NO_AUTO_RES')
     }
 
-    void testS5_7_NullPolicyDefaultsToStrict() {
-        String facId = 'WH_NULL_POLICY'
-        createOrStoreFacility([
-            facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y'
-        ])
+}
 
-        String thiefWeId = setUpProductionRun('II_PROD_MANUF', 10.0, facId)
+class InventoryIssuanceTestSupport extends OFBizTestCase {
 
-        Map impactResult = dispatcher.runSync('getProductionRunTaskForceIssueImpact', [
-            workEffortId: thiefWeId, facilityId: facId, productId: 'II_MAT_A_COST', userLogin: userLogin
-        ])
+    protected GenericValue userLogin
 
-        assert ServiceUtil.isSuccess(impactResult)
-        assertNotNull('Should contain a policyViolation message', impactResult.policyViolation)
-        assertTrue('Message should explain that theft is forbidden',
-                   impactResult.policyViolation.contains('forbidden'))
+    protected InventoryIssuanceTestSupport(String name) {
+        super(name)
     }
 
-    void testFacilityPolicyPersistence() {
-        String facId = 'WH_POLICY_TEST'
-        createOrStoreFacility([
-            facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y',
-            allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'
-        ])
-
-        GenericValue facility = from('Facility').where('facilityId', facId).queryOne()
-        assertNotNull('Facility should be created', facility)
-        assertEquals('allowInventoryTheft should be Y', 'Y', facility.allowInventoryTheft)
-        assertEquals('reconcilePrunBackorders should be Y', 'Y', facility.reconcilePrunBackorders)
-
-        facility.set('allowInventoryTheft', 'N')
-        facility.set('reconcilePrunBackorders', 'N')
-        facility.store()
-
-        facility.refresh()
-        assertEquals('allowInventoryTheft should be N after update', 'N', facility.allowInventoryTheft)
-        assertEquals('reconcilePrunBackorders should be N after update', 'N', facility.reconcilePrunBackorders)
-    }
-
-    // --- Helper Methods ---
-
-    void createOrStoreFacility(Map fields) {
+    protected void storeFacility(Map fields) {
         GenericValue gv = delegator.makeValue('Facility', fields)
         delegator.createOrStore(gv)
     }
 
-    void ensureFacilityPolicies() {
-        createOrStoreFacility([facilityId: 'II_WH', facilityName: 'Test Warehouse', facilityTypeId: 'WAREHOUSE',
+    protected void storeProduct(Map fields) {
+        GenericValue gv = delegator.makeValue('Product', fields)
+        delegator.createOrStore(gv)
+    }
+
+    protected void storeProductAssoc(Map fields) {
+        GenericValue gv = delegator.makeValue('ProductAssoc', fields)
+        delegator.createOrStore(gv)
+    }
+
+    protected void ensureProductBackbone() {
+        storeProduct([productId: 'II_MAT_D_PRODUCED', productTypeId: 'FINISHED_GOOD',
+            isVirtual: 'N', isVariant: 'N', internalName: 'Produced Material D'])
+        storeProduct([productId: 'II_MAT_E_RAW', productTypeId: 'FINISHED_GOOD',
+            isVirtual: 'N', isVariant: 'N', internalName: 'Raw Material E'])
+        storeProduct([productId: 'II_PROD_CHAIN', productTypeId: 'FINISHED_GOOD',
+            isVirtual: 'N', isVariant: 'N', internalName: 'Chain Test Product'])
+
+        java.sql.Timestamp fromDate = java.sql.Timestamp.valueOf('2020-01-01 00:00:00')
+        storeProductAssoc([productId: 'II_PROD_CHAIN', productIdTo: 'II_MAT_D_PRODUCED',
+            productAssocTypeId: 'MANUF_COMPONENT', fromDate: fromDate, quantity: 1.0])
+        storeProductAssoc([productId: 'II_MAT_D_PRODUCED', productIdTo: 'II_MAT_E_RAW',
+            productAssocTypeId: 'MANUF_COMPONENT', fromDate: fromDate, quantity: 1.0])
+    }
+
+    protected void ensureFacilityPolicies() {
+        storeFacility([facilityId: 'II_WH', facilityName: 'Test Warehouse', facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
-        createOrStoreFacility([facilityId: 'WH_FLUID', facilityName: 'Fluid Warehouse', facilityTypeId: 'WAREHOUSE',
+        storeFacility([facilityId: 'WH_FLUID', facilityName: 'Fluid Warehouse', facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'])
-        createOrStoreFacility([facilityId: 'WH_TRADITIONAL', facilityName: 'Traditional Warehouse',
+        storeFacility([facilityId: 'WH_TRADITIONAL', facilityName: 'Traditional Warehouse',
             facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'N',
             reconcilePrunBackorders: 'N'])
-        createOrStoreFacility([facilityId: 'WH_SAFE', facilityName: 'Safe Recovery Warehouse',
+        storeFacility([facilityId: 'WH_SAFE', facilityName: 'Safe Recovery Warehouse',
             facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'N',
             reconcilePrunBackorders: 'Y'])
-        createOrStoreFacility([facilityId: 'WH_NO_AUTO_RES', facilityName: 'No Auto Reservation Warehouse',
+        storeFacility([facilityId: 'WH_NO_AUTO_RES', facilityName: 'No Auto Reservation Warehouse',
             facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'N',
             allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
     }
 
-    void assertTrinityOfTruth(String productId, String workEffortId, BigDecimal expectedIssued,
-                             BigDecimal expectedRes, BigDecimal expectedAtp = null, String facilityId = 'II_WH') {
-        List assignments = from('WorkEffortInventoryAssign')
-                .where('workEffortId', workEffortId)
-                .queryList()
-        BigDecimal totalIssued = assignments.inject(BigDecimal.ZERO) { sum, item ->
-            GenericValue inventoryItem = from('InventoryItem').where('inventoryItemId', item.inventoryItemId).queryOne()
-            if (inventoryItem && inventoryItem.productId == productId) {
-                return sum + (item.getBigDecimal('quantity') ?: BigDecimal.ZERO)
-            }
-            return sum
-        }
-        assertEquals("Physical Issuance Mismatch for ${productId}", expectedIssued.setScale(2, RoundingMode.HALF_UP),
-                totalIssued.setScale(2, RoundingMode.HALF_UP))
-
-        List resRecords = from('WorkEffortInvRes')
-                .where('workEffortId', workEffortId, 'productId', productId)
-                .queryList()
-        BigDecimal totalRes = resRecords.inject(BigDecimal.ZERO) { sum, res ->
-            BigDecimal qty = res.getBigDecimal('quantity') ?: BigDecimal.ZERO
-            BigDecimal qna = res.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO
-            return sum + (qty - qna)
-        }
-        assertEquals("Net Reservation (Physical) Mismatch for ${productId}", expectedRes.setScale(2, RoundingMode.HALF_UP),
-                totalRes.setScale(2, RoundingMode.HALF_UP))
-
-        List inventoryItems = from('InventoryItem').where('productId', productId, 'facilityId', facilityId)
-                .cache(false).queryList()
-        BigDecimal totalAtp = inventoryItems.inject(BigDecimal.ZERO) { sum, item ->
-            sum + (item.getBigDecimal('availableToPromiseTotal') ?: BigDecimal.ZERO)
-        }
-        BigDecimal totalQoh = inventoryItems.inject(BigDecimal.ZERO) { sum, item ->
-            sum + (item.getBigDecimal('quantityOnHandTotal') ?: BigDecimal.ZERO)
-        }
-        BigDecimal totalAccounting = inventoryItems.inject(BigDecimal.ZERO) { sum, item ->
-            sum + (item.getBigDecimal('accountingQuantityTotal') ?: BigDecimal.ZERO)
-        }
-
-        BigDecimal globalDebt = from('WorkEffortInvRes').where('productId', productId, 'inventoryItemId', null).queryList()
-                .inject(BigDecimal.ZERO) { sum, it ->
-                    BigDecimal qty = it.getBigDecimal('quantity') ?: 0
-                    BigDecimal qna = it.getBigDecimal('quantityNotAvailable') ?: 0
-                    return sum + (qty - qna)
-                }
-
-        BigDecimal trueTotalAtp = totalAtp - globalDebt
-
-        if (expectedAtp != null) {
-            assertEquals("ATP Global Pool Mismatch for ${productId}", expectedAtp.setScale(2, RoundingMode.HALF_UP),
-                    trueTotalAtp.setScale(2, RoundingMode.HALF_UP))
-        }
-
-        assertEquals("Ledger Sync (Accounting vs QOH) Mismatch for ${productId}", totalQoh.setScale(2, RoundingMode.HALF_UP),
-                totalAccounting.setScale(2, RoundingMode.HALF_UP))
-
-        GenericValue wegs = from('WorkEffortGoodStandard')
-                .where('workEffortId', workEffortId, 'productId', productId, 'workEffortGoodStdTypeId', 'PRUNT_PROD_NEEDED')
-                .queryFirst()
-        if (wegs) {
-            BigDecimal needed = wegs.getBigDecimal('estimatedQuantity') ?: BigDecimal.ZERO
-            if (totalIssued >= needed && needed > 0) {
-                assertEquals("Logical Satisfaction Failure: WorkEffortGoodStandard should be WEGS_COMPLETED for fully issued ${productId}",
-                        'WEGS_COMPLETED', wegs.statusId)
-            } else if (totalIssued > 0) {
-                assertNotSame("Logical Satisfaction Failure: WorkEffortGoodStandard should NOT be WEGS_COMPLETED for partially issued ${productId}",
-                        'WEGS_COMPLETED', wegs.statusId)
-            }
-        }
-    }
-
-    String setUpProductionRun(String productId, BigDecimal quantity, String facilityId = 'II_WH') {
-        if (!userLogin) {
-            userLogin = from('UserLogin').where('userLoginId', 'system').queryOne()
-        }
-        assert userLogin != null : 'UserLogin \'system\' must exist for tests'
-        Map createResult = dispatcher.runSync('createProductionRun', [
-                productId: productId, pRQuantity: quantity,
-                startDate: UtilDateTime.nowTimestamp(),
-                facilityId: facilityId, userLogin: userLogin
-        ])
-        String productionRunId = (String) createResult.productionRunId
-
-        Map statusResult = dispatcher.runSync('changeProductionRunStatus', [
-                productionRunId: productionRunId, statusId: 'PRUN_DOC_PRINTED',
-                userLogin: userLogin
-        ])
-        assert ServiceUtil.isSuccess(statusResult)
-
-        List tasks = from('WorkEffort').where('workEffortParentId', productionRunId).orderBy('workEffortId').queryList()
-        return tasks ? (String) tasks[0].workEffortId : productionRunId
-    }
-
-    void setUpInventory(String facilityId, String productId, String itemId, BigDecimal quantity, boolean purgeExisting = true) {
-        if (!userLogin) {
-            userLogin = from('UserLogin').where('userLoginId', 'system').queryOne()
-        }
+    protected void setUpInventory(String facilityId, String productId, String itemId, BigDecimal quantity,
+                                  boolean purgeExisting = true) {
+        userLogin = userLogin ?: from('UserLogin').where('userLoginId', 'system').queryOne()
 
         if (purgeExisting && !from('InventoryItem').where('inventoryItemId', itemId).queryOne()) {
             List items = from('InventoryItem').where('productId', productId, 'facilityId', facilityId).queryList()
@@ -963,15 +929,115 @@ class InventoryIssuanceTests extends OFBizTestCase {
         }
 
         delegator.clearAllCaches()
-        dispatcher.runSync('reconcileGlobalReservations', [inventoryItemId: itemId, amountToIssue: 0.0, userLogin: userLogin])
+        dispatcher.runSync('reconcileGlobalReservations',
+                [inventoryItemId: itemId, amountToIssue: 0.0, userLogin: userLogin])
     }
 
-    String setUpNoAutoReserveProductionRun(String matAItemId, BigDecimal matAQuantity) {
-        createOrStoreFacility([facilityId: 'WH_NO_AUTO_RES', facilityName: 'No Auto Reservation Warehouse',
+    // --- Helper Methods ---
+
+    protected BigDecimal scaleQuantity(Object quantity) {
+        BigDecimal value = (quantity ?: BigDecimal.ZERO) as BigDecimal
+        return value.setScale(2, RoundingMode.HALF_UP)
+    }
+
+    protected void assertTrinityOfTruth(String productId, String workEffortId, BigDecimal expectedIssued,
+                                      BigDecimal expectedRes, BigDecimal expectedAtp = null,
+                                      String facilityId = 'II_WH') {
+        List assignments = from('WorkEffortInventoryAssign')
+                .where('workEffortId', workEffortId)
+                .queryList()
+        BigDecimal totalIssued = assignments.inject(BigDecimal.ZERO) { sum, item ->
+            GenericValue inventoryItem = from('InventoryItem').where('inventoryItemId', item.inventoryItemId).queryOne()
+            if (inventoryItem && inventoryItem.productId == productId) {
+                return sum + (item.getBigDecimal('quantity') ?: BigDecimal.ZERO)
+            }
+            return sum
+        }
+        assert totalIssued.setScale(2, RoundingMode.HALF_UP) == expectedIssued.setScale(2, RoundingMode.HALF_UP) :
+                "Physical Issuance Mismatch for ${productId}"
+
+        List resRecords = from('WorkEffortInvRes')
+                .where('workEffortId', workEffortId, 'productId', productId)
+                .queryList()
+        BigDecimal totalRes = resRecords.inject(BigDecimal.ZERO) { sum, res ->
+            BigDecimal qty = res.getBigDecimal('quantity') ?: BigDecimal.ZERO
+            BigDecimal qna = res.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO
+            return sum + (qty - qna)
+        }
+        assert totalRes.setScale(2, RoundingMode.HALF_UP) == expectedRes.setScale(2, RoundingMode.HALF_UP) :
+                "Net Reservation (Physical) Mismatch for ${productId}"
+
+        List inventoryItems = from('InventoryItem').where('productId', productId, 'facilityId', facilityId)
+                .cache(false).queryList()
+        BigDecimal totalAtp = inventoryItems.inject(BigDecimal.ZERO) { sum, item ->
+            sum + (item.getBigDecimal('availableToPromiseTotal') ?: BigDecimal.ZERO)
+        }
+        BigDecimal totalQoh = inventoryItems.inject(BigDecimal.ZERO) { sum, item ->
+            sum + (item.getBigDecimal('quantityOnHandTotal') ?: BigDecimal.ZERO)
+        }
+        BigDecimal totalAccounting = inventoryItems.inject(BigDecimal.ZERO) { sum, item ->
+            sum + (item.getBigDecimal('accountingQuantityTotal') ?: BigDecimal.ZERO)
+        }
+
+        BigDecimal globalDebt = from('WorkEffortInvRes').where('productId', productId, 'inventoryItemId', null).queryList()
+                .inject(BigDecimal.ZERO) { sum, it ->
+                    BigDecimal qty = it.getBigDecimal('quantity') ?: 0
+                    BigDecimal qna = it.getBigDecimal('quantityNotAvailable') ?: 0
+                    return sum + (qty - qna)
+                }
+
+        BigDecimal trueTotalAtp = totalAtp - globalDebt
+
+        if (expectedAtp != null) {
+            assert trueTotalAtp.setScale(2, RoundingMode.HALF_UP) == expectedAtp.setScale(2, RoundingMode.HALF_UP) :
+                    "ATP Global Pool Mismatch for ${productId}"
+        }
+
+        assert totalAccounting.setScale(2, RoundingMode.HALF_UP) == totalQoh.setScale(2, RoundingMode.HALF_UP) :
+                "Ledger Sync (Accounting vs QOH) Mismatch for ${productId}"
+
+        GenericValue wegs = from('WorkEffortGoodStandard')
+                .where('workEffortId', workEffortId, 'productId', productId, 'workEffortGoodStdTypeId', 'PRUNT_PROD_NEEDED')
+                .queryFirst()
+        if (wegs) {
+            BigDecimal needed = wegs.getBigDecimal('estimatedQuantity') ?: BigDecimal.ZERO
+            if (totalIssued >= needed && needed > 0) {
+                assert wegs.statusId == 'WEGS_COMPLETED' :
+                        "Logical Satisfaction Failure: WorkEffortGoodStandard should be WEGS_COMPLETED for fully issued ${productId}"
+            } else if (totalIssued > 0) {
+                assert wegs.statusId != 'WEGS_COMPLETED' :
+                        "Logical Satisfaction Failure: WorkEffortGoodStandard should NOT be WEGS_COMPLETED for partially issued ${productId}"
+            }
+        }
+    }
+
+    protected String setUpProductionRun(String productId, BigDecimal quantity, String facilityId = 'II_WH') {
+        userLogin = userLogin ?: from('UserLogin').where('userLoginId', 'system').queryOne()
+        assert userLogin != null : 'UserLogin \'system\' must exist for tests'
+        Map createResult = dispatcher.runSync('createProductionRun', [
+                productId: productId, pRQuantity: quantity,
+                startDate: UtilDateTime.nowTimestamp(),
+                facilityId: facilityId, userLogin: userLogin
+        ])
+        String productionRunId = (String) createResult.productionRunId
+
+        Map statusResult = dispatcher.runSync('changeProductionRunStatus', [
+                productionRunId: productionRunId, statusId: 'PRUN_DOC_PRINTED',
+                userLogin: userLogin
+        ])
+        assert ServiceUtil.isSuccess(statusResult)
+
+        List tasks = from('WorkEffort').where('workEffortParentId', productionRunId).orderBy('workEffortId').queryList()
+        return tasks ? (String) tasks[0].workEffortId : productionRunId
+    }
+
+    protected String setUpNoAutoReserveProductionRun(String matAItemId, BigDecimal matAQuantity) {
+        storeFacility([facilityId: 'WH_NO_AUTO_RES', facilityName: 'No Auto Reservation Warehouse',
             facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'N',
             allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory('WH_NO_AUTO_RES', 'II_MAT_A_COST', matAItemId, matAQuantity)
         setUpInventory('WH_NO_AUTO_RES', 'II_MAT_C_COST', "${matAItemId}_C", 100.0)
         return setUpProductionRun('II_PROD_MANUF', 10.0, 'WH_NO_AUTO_RES')
     }
+
 }
