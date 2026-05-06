@@ -77,7 +77,6 @@ Map issueProductionRunTask() {
         if (parameters.failIfItemsAreNotAvailable == 'Y' || parameters.failIfItemsAreNotOnHand == 'Y') {
             for (GenericValue component : components) {
                 if (!component.productId) continue
-                
                 BigDecimal needed = component.estimatedQuantity ?: 0.0
                 BigDecimal totalIssuance = from('WorkEffortAndInventoryAssign')
                         .where(workEffortId: workEffort.workEffortId, productId: component.productId)
@@ -124,9 +123,11 @@ Map issueProductionRunTask() {
                     }
 
                 // If Fail-Fast is ON, compare current need against our "Universal Pool" (Free + Promised)
-                if ((parameters.failIfItemsAreNotAvailable == 'Y' && quantityToIssue > totalAvailableToUsAtp) ||
-                    (parameters.failIfItemsAreNotOnHand == 'Y' && quantityToIssue > totalAvailableToUsQoh)) {
-                    logError("issueProductionRunTask - Pre-check Fail: Product ${component.productId}. Need: ${quantityToIssue}, Effective ATP: ${totalAvailableToUsAtp}, Effective QOH: ${totalAvailableToUsQoh}")
+                if ((parameters.failIfItemsAreNotAvailable == 'Y' && quantityToIssue > totalAvailableToUsAtp)
+                        || (parameters.failIfItemsAreNotOnHand == 'Y' && quantityToIssue > totalAvailableToUsQoh)) {
+                    logError("issueProductionRunTask - Pre-check Fail: Product ${component.productId}. Need: "
+                            + "${quantityToIssue}, Effective ATP: ${totalAvailableToUsAtp}, Effective QOH: "
+                            + "${totalAvailableToUsQoh}")
                     GenericValue product = from('Product').where(productId: component.productId).cache().queryOne()
                     Map paramMap = [productId: component.productId,
                                     internalName: product ? product.internalName : '',
@@ -161,7 +162,8 @@ Map issueProductionRunTask() {
                 }
         }
     }
-    return success(label("ManufacturingUiLabels", "ManufacturingProductionRunTaskIssuedSuccessfully", [workEffortId: parameters.workEffortId]))
+    return success(label('ManufacturingUiLabels', 'ManufacturingProductionRunTaskIssuedSuccessfully',
+            [workEffortId: parameters.workEffortId]))
 }
 
 /**
@@ -174,7 +176,8 @@ Map issueProductionRunTaskComponent() {
     String facilityId = parameters.facilityId ?: workEffort?.facilityId
     GenericValue facility = from('Facility').where(facilityId: facilityId).queryOne()
     if (parameters.failIfItemsAreNotAvailable == 'N' && facility?.allowInventoryTheft == 'N') {
-        return ServiceUtil.returnError("Inventory Policy forbids inventory theft for this facility [${facilityId}]. Theft mode (failIfItemsAreNotAvailable=N) cannot be used.")
+        return ServiceUtil.returnError('Inventory Policy forbids inventory theft for this facility ['
+                + facilityId + ']. Theft mode (failIfItemsAreNotAvailable=N) cannot be used.')
     }
 
     GenericValue productionRun = from('WorkEffort').where(workEffortId: workEffort.workEffortParentId).queryOne()
@@ -246,7 +249,9 @@ Map issueProductionRunTaskComponent() {
                      */
                     BigDecimal issueQty = parameters.quantityNotIssued > resQty ? resQty : parameters.quantityNotIssued
                     if (parameters.failIfItemsAreNotOnHand == 'Y' && issueQty > availableQoh) {
-                        logInfo("issueProductionRunTaskComponent - Step 2: Capping reservation issuance for Item: ${reservation.inventoryItemId} to available QOH: ${availableQoh} (Reserved: ${resQty})")
+                        logInfo('issueProductionRunTaskComponent - Step 2: Capping reservation issuance for Item: '
+                                + "${reservation.inventoryItemId} to available QOH: ${availableQoh} "
+                                + "(Reserved: ${resQty})")
                         issueQty = availableQoh
                     }
 
@@ -258,7 +263,8 @@ Map issueProductionRunTaskComponent() {
                         parameters.quantityNotIssued -= issueQty
                     } else if (resQty > 0) {
                         // Self-Healing: If we have a reservation but no QOH, it's a "ghost". Clean it up.
-                        logInfo("issueProductionRunTaskComponent - Step 2: Ghost Reservation detected for Item: ${reservation.inventoryItemId} (Reserved: ${resQty}, QOH: 0). Releasing now.")
+                        logInfo('issueProductionRunTaskComponent - Step 2: Ghost Reservation detected for Item: '
+                                + "${reservation.inventoryItemId} (Reserved: ${resQty}, QOH: 0). Releasing now.")
                         run service: 'releaseProductionRunTaskComponent', with: [
                             workEffortId: parameters.workEffortId,
                             inventoryItemId: reservation.inventoryItemId,
@@ -270,9 +276,9 @@ Map issueProductionRunTaskComponent() {
             }
         }
 
-        // Step 3: Pool Stock Issuance. 
+        // Step 3: Pool Stock Issuance.
         if (parameters.quantityNotIssued > 0) {
-            String orderBy = ""
+            String orderBy = ''
             switch (parameters.reserveOrderEnumId) {
                 case 'INVRO_COST_DESC':
                     orderBy = '-unitCost'
@@ -300,7 +306,8 @@ Map issueProductionRunTaskComponent() {
             List poolCond = [
                 EntityCondition.makeCondition(productId: productId, facilityId: workEffort.facilityId),
                 EntityCondition.makeCondition([
-                    EntityCondition.makeCondition('availableToPromiseTotal', EntityOperator.GREATER_THAN, BigDecimal.ZERO),
+                    EntityCondition.makeCondition('availableToPromiseTotal', EntityOperator.GREATER_THAN,
+                            BigDecimal.ZERO),
                     EntityCondition.makeCondition('quantityOnHandTotal', EntityOperator.GREATER_THAN, BigDecimal.ZERO)
                 ], EntityOperator.OR)
             ]
@@ -323,19 +330,23 @@ Map issueProductionRunTaskComponent() {
                 BigDecimal itemAtp = it.getBigDecimal('availableToPromiseTotal') ?: 0.0
                 // Look up our reservation on this specific item
                 BigDecimal ourRes = from('WorkEffortInvRes')
-                        .where(workEffortId: parameters.workEffortId, inventoryItemId: it.inventoryItemId, productId: productId)
+                        .where(workEffortId: parameters.workEffortId, inventoryItemId: it.inventoryItemId,
+                                productId: productId)
                         .queryOne()?.getBigDecimal('quantity') ?: 0.0
                 // Logic: Use the free pool (if any) PLUS whatever is promised to us.
                 BigDecimal usableFromThis = (itemAtp > 0 ? itemAtp : 0.0) + ourRes
                 // PHYSICAL INTEGRITY CAPPING: Do not promise more than we physically have in Normal mode.
-                BigDecimal qoh = it.getBigDecimal('quantityOnHandTotal') ?: 0.0
-                if (parameters.failIfItemsAreNotOnHand == 'Y' && usableFromThis > qoh) {
-                    usableFromThis = qoh
+                BigDecimal qohValue = it.getBigDecimal('quantityOnHandTotal') ?: 0.0
+                if (parameters.failIfItemsAreNotOnHand == 'Y' && usableFromThis > qohValue) {
+                    usableFromThis = qohValue
                 }
                 return usableFromThis
             } ?: 0.0
 
-            BigDecimal totalPhysicalQoh = inventoryItemList.sum { (it.getBigDecimal('quantityOnHandTotal') && it.getBigDecimal('quantityOnHandTotal') > 0) ? it.getBigDecimal('quantityOnHandTotal') : 0.0 } ?: 0.0
+            BigDecimal totalPhysicalQoh = inventoryItemList.sum {
+                (it.getBigDecimal('quantityOnHandTotal') && it.getBigDecimal('quantityOnHandTotal') > 0)
+                        ? it.getBigDecimal('quantityOnHandTotal') : 0.0
+            } ?: 0.0
             
             if ((parameters.failIfItemsAreNotAvailable == 'Y' && parameters.quantityNotIssued > totalAvailableAtp) ||
                 (parameters.failIfItemsAreNotOnHand == 'Y' && parameters.quantityNotIssued > totalPhysicalQoh)) {
@@ -345,7 +356,8 @@ Map issueProductionRunTaskComponent() {
                                 internalName: product ? product.internalName : '',
                                 parameters: parameters]
                 String errorMsg = label('ManufacturingUiLabels', 'ManufacturingMaterialsNotAvailable', paramMap)
-                logError("issueProductionRunTaskComponent - FAILED: ${errorMsg}. Shortfall: ${parameters.quantityNotIssued} for Product [${productId}]")
+                logError('issueProductionRunTaskComponent - FAILED: '
+                        + "${errorMsg}. Shortfall: ${parameters.quantityNotIssued} for Product [${productId}]")
                 return error(errorMsg)
             }
 
@@ -399,7 +411,8 @@ Map issueProductionRunTaskComponent() {
                                 internalName: product ? product.internalName : '',
                                 parameters: parameters]
                     String errorMsg = label('ManufacturingUiLabels', 'ManufacturingMaterialsNotAvailable', paramMap)
-                    logError("issueProductionRunTaskComponent - FAILED: ${errorMsg}. Shortfall: ${parameters.quantityNotIssued} for Product [${productId}]")
+                    logError('issueProductionRunTaskComponent - FAILED: '
+                            + "${errorMsg}. Shortfall: ${parameters.quantityNotIssued} for Product [${productId}]")
                     return error(errorMsg)
                 }
                 
@@ -455,7 +468,9 @@ Map issueProductionRunTaskComponent() {
             workEffortGoodStandard.store()
         }
     } else {
-        logInfo("issueProductionRunTaskComponent - SKIPPING ISSUANCE: No WorkEffortGoodStandard (BOM Component) record found for Task [${parameters.workEffortId}] Product [${productId}]. Force Issue only works for planned BOM items.")
+        logInfo('issueProductionRunTaskComponent - SKIPPING ISSUANCE: No WorkEffortGoodStandard '
+                + "(BOM Component) record found for Task [${parameters.workEffortId}] Product [${productId}]. "
+                + 'Force Issue only works for planned BOM items.')
     }
     return success()
 }
@@ -488,7 +503,8 @@ Map issueProductionRunTaskComponentInline(Map parameters,
             
             // Smart Availability: We can always use what we've already reserved, plus the pool
             GenericValue ourRes = from('WorkEffortInvRes')
-                    .where(workEffortId: parameters.workEffortId, inventoryItemId: inventoryItem.inventoryItemId, productId: parameters.productId ?: inventoryItem.productId)
+                    .where(workEffortId: parameters.workEffortId, inventoryItemId: inventoryItem.inventoryItemId,
+                            productId: parameters.productId ?: inventoryItem.productId)
                     .queryOne()
             BigDecimal ourResQty = ourRes?.getBigDecimal('quantity') ?: 0.0
 
@@ -519,8 +535,13 @@ Map issueProductionRunTaskComponentInline(Map parameters,
             if (inventoryItemQuantity < parameters.quantityNotIssued) {
                 // If we are in a Traditional warehouse, this error is a Policy violation.
                 // In a Fluid warehouse, this only happens if failIfItemsAreNotAvailable is 'Y' and we ran out of QOH.
-                String errorPrefix = (allowTheft == 'N') ? "Inventory Policy forbids inventory theft" : "Inventory Shortfall"
-                return ServiceUtil.returnError("${errorPrefix}: Item [${inventoryItem.inventoryItemId}] has insufficient capacity (Issuable: ${inventoryItemQuantity}). ATP: ${inventoryItem.availableToPromiseTotal}, QOH: ${inventoryItem.quantityOnHandTotal}, Our Reservation: ${ourResQty}. Atomic issuance cannot proceed.")
+                String errorPrefix = (allowTheft == 'N') ? 'Inventory Policy forbids inventory theft'
+                        : 'Inventory Shortfall'
+                return ServiceUtil.returnError("${errorPrefix}: Item [${inventoryItem.inventoryItemId}] "
+                        + 'has insufficient capacity '
+                        + "(Issuable: ${inventoryItemQuantity}). ATP: ${inventoryItem.availableToPromiseTotal}, "
+                        + "QOH: ${inventoryItem.quantityOnHandTotal}, Our Reservation: ${ourResQty}. "
+                        + 'Atomic issuance cannot proceed.')
             }
 
             parameters.deductAmount = parameters.quantityNotIssued > inventoryItemQuantity ? inventoryItemQuantity : parameters.quantityNotIssued
@@ -586,7 +607,8 @@ Map issueProductionRunTaskComponentInline(Map parameters,
             // Robustly resolve strategy (Fallback to FIFO if missing)
             String strategy = parameters.reserveOrderEnumId ?: 'INVRO_FIFO_REC'
 
-            reconcileGlobalReservationsInternal(inventoryItem.inventoryItemId, atpImpact, parameters.workEffortId, strategy, parameters.failIfItemsAreNotAvailable, taskAllowTheft)
+            reconcileGlobalReservationsInternal(inventoryItem.inventoryItemId, atpImpact,
+                    parameters.workEffortId, strategy, parameters.failIfItemsAreNotAvailable, taskAllowTheft)
 
             parameters.quantityNotIssued -= parameters.deductAmount
             serviceResult = run service: 'balanceInventoryItems', with: [inventoryItemId: inventoryItem.inventoryItemId]
@@ -650,7 +672,7 @@ Map issueInventoryItemToWorkEffort() {
  */
 Map executeProductionRunTaskComponentAtomic() {
     String inventoryItemId = parameters.inventoryItemId
-    GenericValue inventoryItem = from('InventoryItem').where('inventoryItemId', inventoryItemId).queryOne()
+    GenericValue inventoryItem = from('InventoryItem').where(inventoryItemId: inventoryItemId).queryOne()
     if (!inventoryItem) {
         return ServiceUtil.returnError("InventoryItem ${inventoryItemId} not found for atomic execution.")
     }
@@ -784,30 +806,33 @@ Map reconcileGlobalReservationsService() {
  * Reconciles reservations system-wide after an inventory issuance.
  * Returns a list of workEffortIds that were impacted.
  */
-List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDecimal amountToIssue, String currentWorkEffortId, String strategy = 'INVRO_FIFO_REC', String failAvailable = 'Y', String allowInventoryTheft = 'N') {
+List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDecimal amountToIssue,
+        String currentWorkEffortId, String strategy = 'INVRO_FIFO_REC', String failAvailable = 'Y',
+        String allowInventoryTheft = 'N') {
     // 1. Initial Trinity Sync: Ensure ATP matches DB Truth before we start reallocating.
     // PROBLEM: In multi-step transactions, previous physical issuances might not have been 
     // reflected in the ATP ledger yet.
     // ROLE: Establishing a clean, synchronized baseline for the reallocation algorithm.
     trinitySync(inventoryItemId)
     
-    GenericValue inventoryItem = from("InventoryItem").where("inventoryItemId", inventoryItemId).queryOne()
+    GenericValue inventoryItem = from('InventoryItem').where('inventoryItemId', inventoryItemId).queryOne()
     if (!inventoryItem) return []
     String productId = inventoryItem.productId
 
     // SELF-HEALING: Purge logical debt before reconciliation
     // Use PRODUCT-SPECIFIC estimated and committed quantities to avoid cross-component leakage.
-    BigDecimal currentEstimated = from("WorkEffortGoodStandard")
-        .where(workEffortId: currentWorkEffortId, productId: productId, workEffortGoodStdTypeId: "PRUNT_PROD_NEEDED")
-        .queryFirst()?.getBigDecimal("estimatedQuantity") ?: BigDecimal.ZERO
+    BigDecimal currentEstimated = from('WorkEffortGoodStandard')
+        .where(workEffortId: currentWorkEffortId, productId: productId, workEffortGoodStdTypeId: 'PRUNT_PROD_NEEDED')
+        .queryFirst()?.getBigDecimal('estimatedQuantity') ?: BigDecimal.ZERO
     
-    BigDecimal totalCommitted = from("WorkEffortInvRes")
+    BigDecimal totalCommitted = from('WorkEffortInvRes')
         .where(workEffortId: currentWorkEffortId, productId: productId)
         .queryList()
-        .inject(BigDecimal.ZERO) { sum, r -> sum + (r.getBigDecimal("quantity") ?: BigDecimal.ZERO) }
+        .inject(BigDecimal.ZERO) { sum, r -> sum + (r.getBigDecimal('quantity') ?: BigDecimal.ZERO) }
     
     if (totalCommitted > currentEstimated) {
-        logWarning("reconcileGlobalReservations - SELF-HEALING: Purging ${totalCommitted - currentEstimated} excess commitment for WE ${currentWorkEffortId}")
+        logWarning('reconcileGlobalReservations - SELF-HEALING: Purging '
+                + "${totalCommitted - currentEstimated} excess commitment for WE ${currentWorkEffortId}")
         Map releaseResult = runService('releaseProductionRunTaskComponent', [
             workEffortId: currentWorkEffortId,
             inventoryItemId: inventoryItemId,
@@ -884,15 +909,15 @@ List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDeci
     }
 
     // 2. Strategy Sort
-    if (strategy == "INVRO_LIFO_REC") {
+    if (strategy == 'INVRO_LIFO_REC') {
         prospectiveReservations.sort { a, b -> (b.datetimeReceived?.time ?: 0L) <=> (a.datetimeReceived?.time ?: 0L) }
-    } else if (strategy == "INVRO_FIFO_EXP") {
+    } else if (strategy == 'INVRO_FIFO_EXP') {
         prospectiveReservations.sort { a, b -> (a.expireDate?.time ?: 0L) <=> (b.expireDate?.time ?: 0L) }
-    } else if (strategy == "INVRO_LIFO_EXP") {
+    } else if (strategy == 'INVRO_LIFO_EXP') {
         prospectiveReservations.sort { a, b -> (b.expireDate?.time ?: 0L) <=> (a.expireDate?.time ?: 0L) }
-    } else if (strategy == "INVRO_COST_DESC") {
+    } else if (strategy == 'INVRO_COST_DESC') {
         prospectiveReservations.sort { a, b -> (b.unitCost ?: 0) <=> (a.unitCost ?: 0) }
-    } else if (strategy == "INVRO_COST_ASC") {
+    } else if (strategy == 'INVRO_COST_ASC') {
         prospectiveReservations.sort { a, b -> (a.unitCost ?: 0) <=> (b.unitCost ?: 0) }
     } else { // Default: FIFO Received (INVRO_FIFO_REC)
         prospectiveReservations.sort { a, b -> (a.datetimeReceived?.time ?: 0L) <=> (b.datetimeReceived?.time ?: 0L) }
@@ -922,8 +947,7 @@ List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDeci
         if (source.type == 'WorkEffort') {
             if (isSelf) {
                 // SATISFACTION: We are issuing against our own reservation.
-                // Reduce total quantity. ATP is already handled by physical issuance.
-                releaseResult = runService('releaseProductionRunTaskComponent', [
+                Map releaseResult = runService('releaseProductionRunTaskComponent', [
                     workEffortId: res.workEffortId,
                     inventoryItemId: res.inventoryItemId,
                     productId: res.productId,
@@ -932,13 +956,12 @@ List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDeci
                     appendInventoryItemDetail: (res.inventoryItemId != inventoryItemId)
                 ])
                 if (ServiceUtil.isError(releaseResult)) {
-                    logError("reconcileGlobalReservations - FAILED to release reservation for Task [${res.workEffortId}]: ${ServiceUtil.getErrorMessage(releaseResult)}")
-                    // Continue loop, but log the error
+                    logError("reconcileGlobalReservations - FAILED to release reservation for Task [${res.workEffortId}]: "
+                            + ServiceUtil.getErrorMessage(releaseResult))
+                    continue
                 }
             } else {
                 // THEFT: Instead of releasing the reservation, we "demote" it to a backorder.
-                // This keeps the ATP negative (tracking the logical debt) while acknowledging 
-                // that the physical stock was stolen.
                 Map updateResult = runService('updateWorkEffortInvRes', [
                     workEffortId: res.workEffortId,
                     inventoryItemId: res.inventoryItemId,
@@ -947,7 +970,9 @@ List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDeci
                     quantityNotAvailable: (res.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO) + deductNow
                 ])
                 if (ServiceUtil.isError(updateResult)) {
-                    logError("reconcileGlobalReservations - FAILED to demote reservation for Task [${res.workEffortId}]: ${ServiceUtil.getErrorMessage(updateResult)}")
+                    logError("reconcileGlobalReservations - FAILED to demote reservation for Task [${res.workEffortId}]: "
+                            + ServiceUtil.getErrorMessage(updateResult))
+                    continue
                 }
                 impactedTaskIds << res.workEffortId.toString()
                 logInfo("reconcileGlobalReservations - THEFT: Demoted ${deductNow} from Task [${res.workEffortId}] to Backorder.")
@@ -972,55 +997,62 @@ List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDeci
     
     for (String targetWeId : allImpacted) {
         if (productId && targetWeId) {
-            GenericValue wegs = from("WorkEffortGoodStandard")
+            GenericValue wegs = from('WorkEffortGoodStandard')
                 .where(workEffortId: targetWeId, productId: productId, workEffortGoodStdTypeId: 'PRUNT_PROD_NEEDED')
                 .queryFirst()
             
             if (wegs) {
-                BigDecimal estimatedQty = wegs.getBigDecimal("estimatedQuantity") ?: BigDecimal.ZERO
+                BigDecimal estimatedQty = wegs.getBigDecimal('estimatedQuantity') ?: BigDecimal.ZERO
                 
                 // Total Issued
-                BigDecimal totalIssued = from("WorkEffortAndInventoryAssign")
+                BigDecimal totalIssued = from('WorkEffortAndInventoryAssign')
                     .where(workEffortId: targetWeId, productId: productId)
                     .queryList()
-                    .inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal("quantity") ?: BigDecimal.ZERO) }
+                    .inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantity') ?: BigDecimal.ZERO) }
                 
                 // Total Commitment (Physical + Backorder)
-                List allResList = from("WorkEffortInvRes")
+                List allResList = from('WorkEffortInvRes')
                     .where(workEffortId: targetWeId, productId: productId)
                     .queryList()
                 
-                BigDecimal totalCommitment = allResList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal("quantity") ?: BigDecimal.ZERO) }
+                BigDecimal totalCommitment = allResList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantity') ?: BigDecimal.ZERO) }
                 
                 // POLICY: Definition of "Excess" depends on allowInventoryTheft (Strictness)
                 // Aggressive (Y): Ceiling = Estimate - Issued (Hard life cap)
                 // Conservative (N): Ceiling = Estimate (Remaining backorders allowed if Issued > Est)
-                BigDecimal commitmentCeiling = (allowInventoryTheft == 'Y') ? (estimatedQty - totalIssued).max(BigDecimal.ZERO) : estimatedQty
+                BigDecimal commitmentCeiling = (allowTheft == 'Y') ? (estimatedQty - totalIssued).max(BigDecimal.ZERO) : estimatedQty
                 
                 if (totalCommitment > commitmentCeiling) {
                     BigDecimal excessToPurge = totalCommitment.subtract(commitmentCeiling)
-                    logInfo("reconcileGlobalReservations - [SANITY GUARD]: Task [${targetWeId}] Total Commitment (${totalCommitment}) exceeds Policy Ceiling (${commitmentCeiling}) [Policy: ${allowInventoryTheft}]. Purging ${excessToPurge} units of logical debt...")
-                    
-                    // Sort by backorder first (we want to purge debt before physical reservations)
-                    allResList.sort { a, b -> (b.quantityNotAvailable ?: 0) <=> (a.quantityNotAvailable ?: 0) }
-                    
-                    for (GenericValue resToClean : allResList) {
-                        if (excessToPurge <= 0) break
+                    if (excessToPurge > 0) {
+                        logInfo("reconcileGlobalReservations - [SANITY GUARD]: Task [${targetWeId}] Total Commitment "
+                                + "(${totalCommitment}) exceeds Policy Ceiling (${commitmentCeiling}) "
+                                + "[Policy: ${allowTheft}]. Purging ${excessToPurge} units of logical debt...")
                         
-                        BigDecimal qna = resToClean.getBigDecimal("quantityNotAvailable") ?: BigDecimal.ZERO
-                        if (qna > 0) {
-                            BigDecimal purgeFromQna = excessToPurge.min(qna)
-                            Map releaseResResult = runService("releaseProductionRunTaskComponent", [
-                                workEffortId: targetWeId,
-                                inventoryItemId: resToClean.inventoryItemId,
-                                productId: productId,
-                                quantity: purgeFromQna,
-                                appendInventoryItemDetail: true // Logical debt purge MUST restore ATP
-                            ])
-                            if (ServiceUtil.isError(releaseResResult)) {
-                                logError("reconcileGlobalReservations - [SANITY GUARD] FAILED to purge excess debt for Task [${targetWeId}]: ${ServiceUtil.getErrorMessage(releaseResResult)}")
+                        // Sort by backorder first (we want to purge debt before physical reservations)
+                        allResList.sort { a, b -> (b.quantityNotAvailable ?: 0) <=> (a.quantityNotAvailable ?: 0) }
+                        
+                        for (GenericValue resToClean : allResList) {
+                            if (excessToPurge <= 0) break
+                            
+                            BigDecimal qna = resToClean.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO
+                            if (qna > 0) {
+                                BigDecimal purgeFromQna = excessToPurge.min(qna)
+                                Map releaseResResult = runService('releaseProductionRunTaskComponent', [
+                                    workEffortId: targetWeId,
+                                    inventoryItemId: resToClean.inventoryItemId,
+                                    productId: productId,
+                                    quantity: purgeFromQna,
+                                    appendInventoryItemDetail: true // Logical debt purge MUST restore ATP
+                                ])
+                                if (ServiceUtil.isError(releaseResResult)) {
+                                    logError('reconcileGlobalReservations - [SANITY GUARD] FAILED to purge excess '
+                                            + "debt for Task [${targetWeId}]: "
+                                            + ServiceUtil.getErrorMessage(releaseResResult))
+                                    break
+                                }
+                                excessToPurge = excessToPurge.subtract(purgeFromQna)
                             }
-                            excessToPurge = excessToPurge.subtract(purgeFromQna)
                         }
                     }
                 }
@@ -1040,7 +1072,6 @@ List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDeci
 
 /**
  * Force-recalculates ATP for an inventory item based on physical QOH and net physical reservations.
- * 
  * THE TRINITY OF TRUTH:
  * This service synchronizes the three core pillars of inventory integrity:
  * 1. PHYSICAL REALITY (QOH): The actual count of boxes on the shelf (InventoryItem.quantityOnHandTotal).
@@ -1066,43 +1097,46 @@ List<String> reconcileGlobalReservationsInternal(String inventoryItemId, BigDeci
  * 2. True ATP = QOH - Physical Commitment
  * 3. Correction = True ATP - Current ATP (Applied via createInventoryItemDetail)
  */
-def trinitySync(String inventoryItemId) {
-    GenericValue inventoryItem = from("InventoryItem").where("inventoryItemId", inventoryItemId).queryOne()
+void trinitySync(String inventoryItemId) {
+    GenericValue inventoryItem = from('InventoryItem').where(inventoryItemId: inventoryItemId).queryOne()
     if (!inventoryItem) return
-    
-    BigDecimal qoh = inventoryItem.getBigDecimal("quantityOnHandTotal") ?: BigDecimal.ZERO
-    BigDecimal currentAtp = inventoryItem.getBigDecimal("availableToPromiseTotal") ?: BigDecimal.ZERO
-    
-    // Sum Manufacturing Reservations (Physical Commitment only: Qty - QNA)
-    BigDecimal weRes = from("WorkEffortInvRes").where("inventoryItemId", inventoryItemId).queryList()
-        .inject(BigDecimal.ZERO) { sum, r -> 
-            BigDecimal qty = r.getBigDecimal("quantity") ?: BigDecimal.ZERO
-            BigDecimal qna = r.getBigDecimal("quantityNotAvailable") ?: BigDecimal.ZERO
-            return sum + (qty - qna)
+
+    BigDecimal qoh = inventoryItem.getBigDecimal('quantityOnHandTotal') ?: BigDecimal.ZERO
+    BigDecimal currentAtp = inventoryItem.getBigDecimal('availableToPromiseTotal') ?: BigDecimal.ZERO
+    String productId = inventoryItem.productId
+
+    // 1. Calculate Physical Commitments from WorkEffortInvRes
+    BigDecimal weRes = from('WorkEffortInvRes')
+        .where(inventoryItemId: inventoryItemId)
+        .queryList()
+        .inject(BigDecimal.ZERO) { sum, r ->
+            sum + (r.getBigDecimal('quantity') ?: BigDecimal.ZERO) -
+            (r.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO)
         }
-        
-    // Sum Sales Order Reservations (Physical Commitment only: Qty - QNA)
-    BigDecimal ordRes = from("OrderItemShipGrpInvRes").where("inventoryItemId", inventoryItemId).queryList()
-        .inject(BigDecimal.ZERO) { sum, r -> 
-            BigDecimal qty = r.getBigDecimal("quantity") ?: BigDecimal.ZERO
-            BigDecimal qna = r.getBigDecimal("quantityNotAvailable") ?: BigDecimal.ZERO
-            return sum + (qty - qna)
+
+    // 2. Calculate Physical Commitments from OrderItemShipGrpInvRes
+    BigDecimal ordRes = from('OrderItemShipGrpInvRes')
+        .where(inventoryItemId: inventoryItemId)
+        .queryList()
+        .inject(BigDecimal.ZERO) { sum, r ->
+            sum + (r.getBigDecimal('quantity') ?: BigDecimal.ZERO) -
+            (r.getBigDecimal('quantityNotAvailable') ?: BigDecimal.ZERO)
         }
-        
+
     // The Trinity Calculation (Physical Truth)
     BigDecimal trueAtp = qoh - weRes - ordRes
     
-    if (currentAtp != trueAtp) {
-        BigDecimal diff = trueAtp - currentAtp
-        logWarning("Trinity Sync [${inventoryItemId}]: ATP Drift detected. Calculated Truth: ${trueAtp}, Ledger: ${currentAtp}. Applying Delta: ${diff}")
+    BigDecimal diff = trueAtp - currentAtp
+    if (diff != 0) {
+        logWarning("Trinity Sync [${inventoryItemId}]: ATP Drift detected. Calculated Truth: ${trueAtp}, "
+                + "Ledger: ${currentAtp}. Applying Delta: ${diff}")
         
         // Use createInventoryItemDetail to maintain full audit trail and trigger automatic total updates
-        runService("createInventoryItemDetail", [
+        run service: 'createInventoryItemDetail', with: [
             inventoryItemId: inventoryItemId,
             availableToPromiseDiff: diff,
-            quantityOnHandDiff: 0.0,
-            accountingQuantityDiff: 0.0
-        ])
-        
+            reasonEnumId: 'VAR_INTEGRITY_SYNC',
+            description: "Trinity of Truth Synchronization (Policy: ${inventoryItem.facilityId})"
+        ]
     }
 }
