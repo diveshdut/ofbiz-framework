@@ -401,7 +401,6 @@ Map issueProductionRunTaskComponent() {
             }
 
             // Step 4: Final Fallback - Forced Creation (Last Resort for non-strict modes)
-            // If we got here, it means both fail flags were 'N', allowing negative issuance on the last non-serialized item
             if (parameters.quantityNotIssued > 0) {
                 if (parameters.failIfItemsAreNotAvailable == 'Y' || parameters.failIfItemsAreNotOnHand == 'Y') {
                     GenericValue product = from('Product').where(productId: productId).cache().queryOne()
