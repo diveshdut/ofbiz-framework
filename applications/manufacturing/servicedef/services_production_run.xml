@@ -213,7 +213,7 @@ under the License.
             the issuance is done.
             If locationSeqIds are provided, then the items are only issued from the inventory items associated to the locations.
             If failIfItemsAreNotAvailable is set to "Y" (the default is "Y") then the service fails if there is not enough inventory available:
-            no reservation will be stolen.
+            no reservation will be reallocated.
             If failIfItemsAreNotOnHand is set to "Y" (the default is "Y") then the service fails if there is not enough inventory:
             no items with negative qoh will be created.
             If lotId is filled, failIfItemsAreNotAvailable is set to automatically set to "Y".
@@ -259,7 +259,7 @@ under the License.
         <attribute name="currentWorkEffortId" type="String" mode="IN" optional="true"/>
         <attribute name="strategy" type="String" mode="IN" optional="true"/>
         <attribute name="failAvailable" type="String" mode="IN" optional="true"/>
-        <attribute name="allowInventoryTheft" type="String" mode="IN" optional="true"/>
+        <attribute name="allowInventoryReallocation" type="String" mode="IN" optional="true"/>
         <attribute name="impactedTaskIds" type="List" mode="OUT" optional="true"/>
     </service>
     <service name="issueInventoryItemToWorkEffort" engine="groovy"
@@ -516,7 +516,7 @@ under the License.
     </service>
     <service name="reallocateAndIssueInventory" engine="groovy"
              location="component://manufacturing/src/main/groovy/org/apache/ofbiz/manufacturing/jobshopmgt/ProductionRunResServices.groovy" invoke="reallocateAndIssueInventory" auth="true">
-        <description>Performs Move-Then-Issue: Re-allocates reservations from victims to current task, then issues.</description>
+        <description>Performs Move-Then-Issue: Reallocates reservations from affected reservations to the current task, then issues.</description>
         <attribute name="workEffortId" type="String" mode="IN" optional="false"/>
         <attribute name="productId" type="String" mode="IN" optional="true"/>
         <attribute name="reserveOrderEnumId" type="String" mode="IN" optional="true"/>
@@ -551,15 +551,11 @@ under the License.
              location="component://manufacturing/src/main/groovy/org/apache/ofbiz/manufacturing/jobshopmgt/ProductionRunResServices.groovy" invoke="reconcileInventoryForProductionJobs" auth="true">
         <description>
             Nightly scheduled job responsible for maintaining inventory integrity across active production runs.
-            Enforces the 'Trinity of Truth' by auditing logical reservations against physical stock and operational policies.
+            Enforces inventory integrity by auditing logical reservations against physical stock and operational policies.
             Behavior is governed by two facility-level flags:
-            1. allowInventoryTheft: Informs the Auditor's strictness in purging orphaned debt from daily reallocations.
+            1. allowInventoryReallocation: Informs the auditor's strictness in purging orphaned debt from daily reallocations.
             2. reconcilePrunBackorders: Gates the Satisfier's ability to auto-settle valid production run backorders using pool stock.
         </description>
     </service>
-    <service name="trinitySync" engine="groovy"
-             location="component://manufacturing/src/main/groovy/org/apache/ofbiz/manufacturing/jobshopmgt/ProductionRunServicesScript.groovy" invoke="trinitySync" auth="true">
-        <description>Enforces the Trinity of Truth for a specific InventoryItem.</description>
-        <attribute name="inventoryItemId" type="String" mode="IN" optional="false"/>
-    </service>
+
 </services>

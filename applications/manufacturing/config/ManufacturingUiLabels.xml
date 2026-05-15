@@ -3166,8 +3166,8 @@
     <property key="ManufacturingAutoReservePrun">
         <value xml:lang="en">Auto-Reserve Production Run Inventory</value>
     </property>
-    <property key="ManufacturingAllowInventoryTheft">
-        <value xml:lang="en">Allow Inventory Re-allocation (Theft)</value>
+    <property key="ManufacturingAllowInventoryReallocation">
+        <value xml:lang="en">Allow Inventory Reallocation</value>
     </property>
     <property key="ManufacturingReconcilePrunBackorders">
         <value xml:lang="en">Auto-Reconcile Production Backorders</value>
@@ -3185,7 +3185,7 @@
         <value xml:lang="en">Force Issue Impact Warning</value>
     </property>
     <property key="ManufacturingForceIssueImpactWarning">
-        <value xml:lang="en">The following inventory reservations will be 'stolen' if you proceed with Force Issuance:</value>
+        <value xml:lang="en">The following inventory reservations will be reallocated if you proceed with Force Issuance:</value>
     </property>
     <property key="ManufacturingImpactType">
         <value xml:lang="en">Impact Type</value>
@@ -3211,7 +3211,7 @@
     <property key="TASK_RESERVATION">
         <value xml:lang="en">Existing Reservation</value>
     </property>
-    <property key="STOLEN_STOCK">
+    <property key="REALLOCATED_STOCK">
         <value xml:lang="en">Re-allocated Stock</value>
     </property>
     <property key="ManufacturingNewCalendar">

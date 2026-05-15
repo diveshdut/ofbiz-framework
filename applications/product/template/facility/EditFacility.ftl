@@ -129,11 +129,11 @@ under the License.
     </td>
   </tr>
   <tr>
-    <td class="label">${uiLabelMap.ManufacturingAllowInventoryTheft}</td>
+    <td class="label">${uiLabelMap.ManufacturingAllowInventoryReallocation}</td>
     <td>
-      <select name="allowInventoryTheft">
-          <option value="Y" <#if (facility.allowInventoryTheft?? && facility.allowInventoryTheft == 'Y')>selected="selected"</#if>>${uiLabelMap.CommonY}</option>
-          <option value="N" <#if (facility.allowInventoryTheft?? && facility.allowInventoryTheft == 'N') || !facility.allowInventoryTheft??>selected="selected"</#if>>${uiLabelMap.CommonN}</option>
+      <select name="allowInventoryReallocation">
+          <option value="Y" <#if (facility.allowInventoryReallocation?? && facility.allowInventoryReallocation == 'Y')>selected="selected"</#if>>${uiLabelMap.CommonY}</option>
+          <option value="N" <#if (facility.allowInventoryReallocation?? && facility.allowInventoryReallocation == 'N') || !facility.allowInventoryReallocation??>selected="selected"</#if>>${uiLabelMap.CommonN}</option>
       </select>
     </td>
   </tr>

@@ -40,7 +40,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
     void testS1_1_StrictIssuanceFailure() {
         String facId = 'WH_S1_1'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S1_1', 100.0)
         // Request PR for 60 units (Needs 120 MAT_A).
         String weId = setUpProductionRun('II_PROD_MANUF', 60.0, facId)
@@ -52,34 +52,35 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         assert ServiceUtil.isError(result)
     }
 
-    void testS1_2_ForceWithTheft() {
+    void testS1_2_ForceWithReallocation() {
         String facId = 'WH_S1_2'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S1_2', 100.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S1_2', 100.0)
-        // Setup Victim: Needs 50 PR -> 100 MAT_A Reserved. (Pool = 100, so Victim gets all).
-        String victimWeId = setUpProductionRun('II_PROD_MANUF', 50.0, facId)
-        assertTrinityOfTruth('II_MAT_A_COST', victimWeId, 0.0, 100.0, 0.0, facId)
+        // Setup Affected reservation: Needs 50 PR -> 100 MAT_A Reserved. (Pool = 100, so Affected reservation gets all).
+        String affectedWeId = setUpProductionRun('II_PROD_MANUF', 50.0, facId)
+        assertInventoryIntegrity('II_MAT_A_COST', affectedWeId, 0.0, 100.0, 0.0, facId)
 
-        // Setup Thief: Needs 25 PR -> 50 MAT_A. Pool is empty!
-        String thiefWeId = setUpProductionRun('II_PROD_MANUF', 25.0, facId)
+        // Setup issuing task: Needs 25 PR -> 50 MAT_A. Pool is empty.
+        String issuingWeId = setUpProductionRun('II_PROD_MANUF', 25.0, facId)
 
-        // Action: Force Issue Thief. Should steal 50 from Victim.
+        // Action: Force issue. Should reallocate 50 from affected reservation.
         Map result = dispatcher.runSync('issueProductionRunTask', [
-                workEffortId: thiefWeId, failIfItemsAreNotAvailable: 'N', userLogin: userLogin
+                workEffortId: issuingWeId, failIfItemsAreNotAvailable: 'N', userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(result)
 
-        // Verify Trinity: Thief has 50 issued. Victim has 50 issued, 50 reserved, 0 ATP.
+        // Verify integrity: issuing task has 50 issued. Affected reservation has 50 issued, 50 reserved, 0 ATP.
         // ATP is 0 because the 50 remaining reserved units are backordered (QNA=50).
-        assertTrinityOfTruth('II_MAT_A_COST', thiefWeId, 50.0, 0.0, 0.0, facId)
-        assertTrinityOfTruth('II_MAT_A_COST', victimWeId, 0.0, 50.0, 0.0, facId)
+        assertInventoryIntegrity('II_MAT_A_COST', issuingWeId, 50.0, 0.0, 0.0, facId)
+        assertInventoryIntegrity('II_MAT_A_COST', affectedWeId, 0.0, 50.0, 0.0, facId)
 
-        // Verify Victim's Backorder
-        GenericValue victimRes = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST')
+        // Verify Affected reservation's Backorder
+        GenericValue affectedRes = from('WorkEffortInvRes').where('workEffortId', affectedWeId, 'productId', 'II_MAT_A_COST')
                 .queryFirst()
-        assert scaleQuantity(victimRes.getBigDecimal('quantityNotAvailable')) == scaleQuantity(50.0) : 'Victim should be backordered by 50'
+        assert scaleQuantity(affectedRes.getBigDecimal('quantityNotAvailable')) == scaleQuantity(50.0) :
+                'Affected reservation should be backordered by 50'
     }
 
     // --- Category 4: Real-time Reconciliation (SECA) ---
@@ -87,7 +88,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
     void testS4_1_RealTimeReconciliationOnReceipt() {
         String facId = 'WH_RECON_Y'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'Y'])
 
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_RECON', 0.0)
         String weId = setUpProductionRun('II_PROD_MANUF', 20.0, facId)
@@ -112,7 +113,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         Map balanceResult = dispatcher.runSync('balanceInventoryItems', [inventoryItemId: newItemId, userLogin: userLogin])
         assert ServiceUtil.isSuccess(balanceResult)
 
-        assertTrinityOfTruth('II_MAT_C_COST', weId, 0.0, 20.0, 30.0, facId)
+        assertInventoryIntegrity('II_MAT_C_COST', weId, 0.0, 20.0, 30.0, facId)
 
         res = from('WorkEffortInvRes').where('workEffortId', weId, 'productId', 'II_MAT_C_COST').queryFirst()
         assert scaleQuantity(res.getBigDecimal('quantityNotAvailable')) == scaleQuantity(0.0) :
@@ -123,7 +124,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
     void testS4_2_ProductionChainAutoSatisfaction() {
         String facId = 'WH_CHAIN_RECON'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'Y'])
 
         setUpInventory(facId, 'II_MAT_E_RAW', 'II_MAT_E_RAW_S4_2', 100.0)
         setUpInventory(facId, 'II_MAT_D_PRODUCED', 'II_MAT_D_RECON', 0.0)
@@ -168,7 +169,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
                 'PR-A\'s reservation should now be satisfied (QNA=0)'
         assert resA.inventoryItemId == newInventoryItemId : 'PR-A\'s reservation should be tied to the item produced by PR-B'
 
-        assertTrinityOfTruth('II_MAT_D_PRODUCED', prATaskId, 0.0, 10.0, 5.0, facId)
+        assertInventoryIntegrity('II_MAT_D_PRODUCED', prATaskId, 0.0, 10.0, 5.0, facId)
     }
 
     // --- Category 3: Backorders & Residuals ---
@@ -176,7 +177,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
     void testS3_2_NegativeReservationResolution() {
         String facId = 'WH_S3_2'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
 
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S3_2', 100.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S3_2', 0.0)
@@ -196,13 +197,13 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         ])
         assert ServiceUtil.isSuccess(result)
 
-        assertTrinityOfTruth('II_MAT_C_COST', weId, 20.0, 0.0, 30.0, facId)
+        assertInventoryIntegrity('II_MAT_C_COST', weId, 20.0, 0.0, 30.0, facId)
     }
 
     void testS3_4_ImpactPlanAudit() {
         String facId = 'WH_S3_4'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S3_4', 100.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S3_4', 100.0)
 
@@ -221,46 +222,46 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         List issuePlan = (List) impactResult.inventoryIssuePlan
 
         BigDecimal totalImpact = impactList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.quantity ?: BigDecimal.ZERO) }
-        assert scaleQuantity(totalImpact) == scaleQuantity(15.0) : 'Thief should steal 15 units'
+        assert scaleQuantity(totalImpact) == scaleQuantity(15.0) : 'Issuing task should reallocate 15 units'
         assert issuePlan.size() == 0 : 'Pool should have 0 available'
 
-        Map v1Impact = (Map) impactList.find { it.victimWorkEffortId == v1 }
-        assert v1Impact != null : 'Victim 1 should be in the Impact List'
-        assert v1Impact.type == 'STOLEN' : 'Victim 1 impact type should be STOLEN'
+        Map v1Impact = (Map) impactList.find { it.impactedWorkEffortId == v1 }
+        assert v1Impact != null : 'Affected reservation 1 should be in the Impact List'
+        assert v1Impact.type == 'REALLOCATED' : 'Affected reservation 1 impact type should be REALLOCATED'
     }
 
-    void testS3_5_VictimSanityGuard() {
+    void testS3_5_AffectedReservationSanityGuard() {
         String facId = 'WH_S3_5'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S3_5', 20.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S3_5', 100.0)
-        String victimWeId = setUpProductionRun('II_PROD_MANUF', 10.0, facId)
+        String affectedWeId = setUpProductionRun('II_PROD_MANUF', 10.0, facId)
         dispatcher.runSync('reserveWorkEffortInventoryItem', [
-            workEffortId: victimWeId, productId: 'II_MAT_A_COST', facilityId: facId,
+            workEffortId: affectedWeId, productId: 'II_MAT_A_COST', facilityId: facId,
             inventoryItemId: null, quantity: 20.0, quantityNotAvailable: 20.0,
             requireInventory: 'N', userLogin: userLogin
         ])
 
-        int resCount = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryCount()
-        assert resCount == 2 : 'Victim should have 2 records (Dirty State)'
+        int resCount = from('WorkEffortInvRes').where('workEffortId', affectedWeId, 'productId', 'II_MAT_A_COST').queryCount()
+        assert resCount == 2 : 'Affected reservation should have 2 records (Dirty State)'
 
-        String thiefWeId = setUpProductionRun('II_PROD_MANUF', 5.0, facId)
+        String issuingWeId = setUpProductionRun('II_PROD_MANUF', 5.0, facId)
 
         List impactList = [[
-            productId: 'II_MAT_A_COST', impactType: 'Production Task', impactId: victimWeId,
-            inventoryItemId: 'II_MAT_A_S3_5', quantity: 10.0, type: 'STOLEN', victimWorkEffortId: victimWeId
+            productId: 'II_MAT_A_COST', impactType: 'Production Task', impactId: affectedWeId,
+            inventoryItemId: 'II_MAT_A_S3_5', quantity: 10.0, type: 'REALLOCATED', impactedWorkEffortId: affectedWeId
         ]]
 
         Map reallocResult = dispatcher.runSync('reallocateAndIssueInventory', [
-                workEffortId: thiefWeId, impactList: impactList, userLogin: userLogin
+                workEffortId: issuingWeId, impactList: impactList, userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(reallocResult)
 
-        int finalResCount = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryCount()
-        assert finalResCount == 1 : 'Victim should now have exactly 1 record (Sanity Guard worked)'
+        int finalResCount = from('WorkEffortInvRes').where('workEffortId', affectedWeId, 'productId', 'II_MAT_A_COST').queryCount()
+        assert finalResCount == 1 : 'Affected reservation should now have exactly 1 record (Sanity Guard worked)'
 
-        GenericValue remainingRes = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryFirst()
+        GenericValue remainingRes = from('WorkEffortInvRes').where('workEffortId', affectedWeId, 'productId', 'II_MAT_A_COST').queryFirst()
         BigDecimal totalCommited = (remainingRes.getBigDecimal('quantity') ?: BigDecimal.ZERO)
         assert scaleQuantity(totalCommited) == scaleQuantity(20.0) : 'Total commitment should match Requirement (20)'
     }
@@ -268,33 +269,33 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
     void testS3_6_ExplicitReallocationWorkflow() {
         String facId = 'WH_S3_6'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S3_6', 100.0)
         setUpInventory(facId, 'II_MAT_C_COST', 'II_MAT_C_S3_6', 100.0)
 
-        String victimWeId = setUpProductionRun('II_PROD_MANUF', 50.0, facId)
-        assertTrinityOfTruth('II_MAT_A_COST', victimWeId, 0.0, 100.0, 0.0, facId)
+        String affectedWeId = setUpProductionRun('II_PROD_MANUF', 50.0, facId)
+        assertInventoryIntegrity('II_MAT_A_COST', affectedWeId, 0.0, 100.0, 0.0, facId)
 
-        String thiefWeId = setUpProductionRun('II_PROD_MANUF', 25.0, facId)
+        String issuingWeId = setUpProductionRun('II_PROD_MANUF', 25.0, facId)
 
         Map impactResult = dispatcher.runSync('getProductionRunTaskForceIssueImpact', [
-            workEffortId: thiefWeId, facilityId: facId, userLogin: userLogin
+            workEffortId: issuingWeId, facilityId: facId, userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(impactResult)
         List impactList = (List) impactResult.impactList
-        BigDecimal plannedTheft = impactList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.quantity ?: BigDecimal.ZERO) }
-        assert scaleQuantity(plannedTheft) == scaleQuantity(50.0) : 'Audit should plan to steal 50 units'
+        BigDecimal plannedReallocation = impactList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.quantity ?: BigDecimal.ZERO) }
+        assert scaleQuantity(plannedReallocation) == scaleQuantity(50.0) : 'Audit should plan to reallocate 50 units'
 
         Map reallocResult = dispatcher.runSync('reallocateAndIssueInventory', [
-            workEffortId: thiefWeId, impactList: impactList, userLogin: userLogin
+            workEffortId: issuingWeId, impactList: impactList, userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(reallocResult)
 
-        assertTrinityOfTruth('II_MAT_A_COST', thiefWeId, 50.0, 0.0, 0.0, facId)
+        assertInventoryIntegrity('II_MAT_A_COST', issuingWeId, 50.0, 0.0, 0.0, facId)
 
-        List victimResList = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryList()
-        BigDecimal victimQna = victimResList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantityNotAvailable') ?: 0) }
-        assert scaleQuantity(victimQna) == scaleQuantity(50.0) : 'Victim should be backordered by 50 units'
+        List affectedResList = from('WorkEffortInvRes').where('workEffortId', affectedWeId, 'productId', 'II_MAT_A_COST').queryList()
+        BigDecimal affectedQna = affectedResList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantityNotAvailable') ?: 0) }
+        assert scaleQuantity(affectedQna) == scaleQuantity(50.0) : 'Affected reservation should be backordered by 50 units'
 
         GenericValue invItem = from('InventoryItem').where('inventoryItemId', 'II_MAT_A_S3_6').queryOne()
         assert scaleQuantity(invItem.getBigDecimal('quantityOnHandTotal')) == scaleQuantity(50.0) : 'Physical QOH should be 50'
@@ -304,7 +305,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
     void testS4_1_ReleaseWithRestore() {
         String facId = 'WH_S4_1'
         storeFacility([facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory(facId, 'II_MAT_A_COST', 'II_MAT_A_S4_1', 100.0)
         String weId = setUpProductionRun('II_PROD_MANUF', 10.0, facId)
 
@@ -352,32 +353,33 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         setUpInventory('WH_TRADITIONAL', 'II_MAT_A_COST', itemId, 100.0)
         setUpInventory('WH_TRADITIONAL', 'II_MAT_C_COST', 'II_INV_TRAD_C_S5_1', 100.0)
 
-        String victimWeId = setUpProductionRun('II_PROD_MANUF', 50.0, 'WH_TRADITIONAL')
-        assertTrinityOfTruth('II_MAT_A_COST', victimWeId, 0.0, 100.0, 0.0, 'WH_TRADITIONAL')
+        String affectedWeId = setUpProductionRun('II_PROD_MANUF', 50.0, 'WH_TRADITIONAL')
+        assertInventoryIntegrity('II_MAT_A_COST', affectedWeId, 0.0, 100.0, 0.0, 'WH_TRADITIONAL')
 
-        String thiefWeId = setUpProductionRun('II_PROD_MANUF', 10.0, 'WH_TRADITIONAL')
+        String issuingWeId = setUpProductionRun('II_PROD_MANUF', 10.0, 'WH_TRADITIONAL')
 
         Map result = dispatcher.runSync('issueProductionRunTask', [
-                workEffortId: thiefWeId, failIfItemsAreNotAvailable: 'N', userLogin: userLogin
+                workEffortId: issuingWeId, failIfItemsAreNotAvailable: 'N', userLogin: userLogin
         ], 0, true)
 
         assert ServiceUtil.isError(result)
-        assert ServiceUtil.getErrorMessage(result).contains('forbids inventory theft') : 'Error message should contain theft policy violation'
+        assert ServiceUtil.getErrorMessage(result).contains('forbids inventory reallocation') :
+                'Error message should contain reallocation policy violation'
     }
 
     void testS5_2_APIPolicyEnforcement() {
         String itemId = 'II_INV_TRAD_S5_2'
-        String thiefWeId = setUpProductionRun('II_PROD_MANUF', 10.0, 'WH_TRADITIONAL')
+        String issuingWeId = setUpProductionRun('II_PROD_MANUF', 10.0, 'WH_TRADITIONAL')
         setUpInventory('WH_TRADITIONAL', 'II_MAT_A_COST', itemId, 100.0)
         setUpInventory('WH_TRADITIONAL', 'II_MAT_C_COST', 'II_INV_TRAD_C_S5_2', 100.0)
 
         List impactList = [[
-            productId: 'II_MAT_A_COST', impactType: 'Production Task', impactId: 'SOME_VICTIM',
-            inventoryItemId: itemId, quantity: 10.0, type: 'STOLEN', victimWorkEffortId: 'SOME_VICTIM'
+            productId: 'II_MAT_A_COST', impactType: 'Production Task', impactId: 'SOME_AFFECTED_TASK',
+            inventoryItemId: itemId, quantity: 10.0, type: 'REALLOCATED', impactedWorkEffortId: 'SOME_AFFECTED_TASK'
         ]]
 
         Map reallocResult = dispatcher.runSync('reallocateAndIssueInventory', [
-                workEffortId: thiefWeId, impactList: impactList, facilityId: 'WH_TRADITIONAL', userLogin: userLogin
+                workEffortId: issuingWeId, impactList: impactList, facilityId: 'WH_TRADITIONAL', userLogin: userLogin
         ], 0, true)
 
         assert ServiceUtil.isError(reallocResult)
@@ -389,9 +391,9 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         String itemIdC = 'II_INV_FLUID_C_S5_3'
         setUpInventory('WH_FLUID', 'II_MAT_A_COST', itemIdA, 100.0)
         setUpInventory('WH_FLUID', 'II_MAT_C_COST', itemIdC, 0.0)
-        String victimWeId = setUpProductionRun('II_PROD_MANUF', 10.0, 'WH_FLUID')
+        String affectedWeId = setUpProductionRun('II_PROD_MANUF', 10.0, 'WH_FLUID')
         dispatcher.runSync('reserveWorkEffortInventoryItem', [
-            workEffortId: victimWeId, productId: 'II_MAT_A_COST', facilityId: 'WH_FLUID',
+            workEffortId: affectedWeId, productId: 'II_MAT_A_COST', facilityId: 'WH_FLUID',
             inventoryItemId: itemIdA, quantity: 20.0, quantityNotAvailable: 20.0,
             requireInventory: 'N', userLogin: userLogin
         ])
@@ -406,7 +408,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
 
         dispatcher.runSync('reconcileInventoryForProductionJobs', [userLogin: userLogin])
 
-        GenericValue resA = from('WorkEffortInvRes').where('workEffortId', victimWeId, 'productId', 'II_MAT_A_COST').queryFirst()
+        GenericValue resA = from('WorkEffortInvRes').where('workEffortId', affectedWeId, 'productId', 'II_MAT_A_COST').queryFirst()
         assert resA != null : 'Auditor reservation should exist'
         assert scaleQuantity(resA.getBigDecimal('quantityNotAvailable')) == scaleQuantity(0.0) :
                 'Auditor should have purged phantom debt'
@@ -426,16 +428,16 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         setUpInventory('WH_FLUID', 'II_MAT_C_COST', 'II_INV_FLUID_C_S5_4', 100.0)
         setUpInventory('WH_FLUID', 'II_MAT_A_COST', 'II_INV_FLUID_B_S5_4', 0.0, false)
 
-        String victimWeId = setUpProductionRun('II_PROD_MANUF', 5.0, 'WH_FLUID')
+        String affectedWeId = setUpProductionRun('II_PROD_MANUF', 5.0, 'WH_FLUID')
 
-        Map issueVictimResult = dispatcher.runSync('issueProductionRunTaskComponent', [
-            workEffortId: victimWeId, productId: 'II_MAT_A_COST', quantity: 5.0,
+        Map issueAffectedResult = dispatcher.runSync('issueProductionRunTaskComponent', [
+            workEffortId: affectedWeId, productId: 'II_MAT_A_COST', quantity: 5.0,
             failIfItemsAreNotAvailable: 'N', userLogin: userLogin
         ])
-        assert ServiceUtil.isSuccess(issueVictimResult)
+        assert ServiceUtil.isSuccess(issueAffectedResult)
 
         dispatcher.runSync('reserveWorkEffortInventoryItem', [
-            workEffortId: victimWeId, productId: 'II_MAT_A_COST', facilityId: 'WH_FLUID',
+            workEffortId: affectedWeId, productId: 'II_MAT_A_COST', facilityId: 'WH_FLUID',
             inventoryItemId: itemId, quantity: 7.0, quantityNotAvailable: 7.0,
             requireInventory: 'N', userLogin: userLogin
         ])
@@ -444,7 +446,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
 
         dispatcher.runSync('reconcileInventoryForProductionJobs', [userLogin: userLogin])
 
-        List resList = from('WorkEffortInvRes').where('workEffortId', victimWeId).queryList()
+        List resList = from('WorkEffortInvRes').where('workEffortId', affectedWeId).queryList()
         BigDecimal totalQna = resList.inject(BigDecimal.ZERO) { sum, it -> sum + (it.getBigDecimal('quantityNotAvailable') ?: 0) }
         assert scaleQuantity(totalQna) == scaleQuantity(5.0) : 'Aggressive Auditor should have purged excess logical debt to match estimate ceiling'
 
@@ -534,7 +536,7 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         assert scaleQuantity(boQna) == scaleQuantity(0.0) : 'Safe Mode (Conservative Satisfier) should have healed backorder'
     }
 
-    void testM1_ManualLotTheftSuccess() {
+    void testM1_ManualLotReallocationSuccess() {
         setUpInventory('WH_FLUID', 'II_MAT_A_COST', 'II_MAN_FLUID', 10.0)
         GenericValue item = from('InventoryItem').where('inventoryItemId', 'II_MAN_FLUID').queryOne()
         item.set('locationSeqId', 'FLOC_01')
@@ -542,26 +544,27 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         item.store()
 
         dispatcher.runSync('reserveWorkEffortInventoryItem', [
-            workEffortId: 'WE_VICTIM', productId: 'II_MAT_A_COST', facilityId: 'WH_FLUID',
+            workEffortId: 'WE_AFFECTED', productId: 'II_MAT_A_COST', facilityId: 'WH_FLUID',
             inventoryItemId: 'II_MAN_FLUID', quantity: 10.0, userLogin: userLogin
         ])
 
         Map result = dispatcher.runSync('issueProductionRunTaskComponent', [
-            workEffortId: 'WE_ATTACKER_FLUID', productId: 'II_MAT_A_COST',
+            workEffortId: 'WE_ISSUING_FLUID', productId: 'II_MAT_A_COST',
             lotId: 'LOT_MANUAL_01', quantity: 5.0, failIfItemsAreNotAvailable: 'N', userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(result)
 
-        assertTrinityOfTruth('II_MAT_A_COST', 'WE_ATTACKER_FLUID', 5.0, 0.0, 0.0, 'WH_FLUID')
-        GenericValue victimRes = from('WorkEffortInvRes').where(workEffortId: 'WE_VICTIM').queryFirst()
-        assert scaleQuantity(victimRes.getBigDecimal('quantityNotAvailable')) == scaleQuantity(5.0) : 'Victim should be backordered by 5'
+        assertInventoryIntegrity('II_MAT_A_COST', 'WE_ISSUING_FLUID', 5.0, 0.0, 0.0, 'WH_FLUID')
+        GenericValue affectedRes = from('WorkEffortInvRes').where(workEffortId: 'WE_AFFECTED').queryFirst()
+        assert scaleQuantity(affectedRes.getBigDecimal('quantityNotAvailable')) == scaleQuantity(5.0) :
+                'Affected reservation should be backordered by 5'
     }
 
     void testM2_ManualForceNegative() {
         setUpInventory('WH_FLUID', 'II_MAT_A_COST', 'II_MAN_FLUID', 0.0)
 
         Map result = dispatcher.runSync('issueProductionRunTaskComponent', [
-            workEffortId: 'WE_ATTACKER_FLUID', productId: 'II_MAT_A_COST',
+            workEffortId: 'WE_ISSUING_FLUID', productId: 'II_MAT_A_COST',
             inventoryItemId: 'II_MAN_FLUID', quantity: 10.0,
             failIfItemsAreNotAvailable: 'N', failIfItemsAreNotOnHand: 'N', userLogin: userLogin
         ])
@@ -577,12 +580,12 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         item.set('lotId', 'LOT_MANUAL_01')
         item.store()
         dispatcher.runSync('reserveWorkEffortInventoryItem', [
-            workEffortId: 'WE_VICTIM', productId: 'II_MAT_A_COST', facilityId: 'WH_FLUID',
+            workEffortId: 'WE_AFFECTED', productId: 'II_MAT_A_COST', facilityId: 'WH_FLUID',
             inventoryItemId: 'II_MAN_FLUID', quantity: 10.0, userLogin: userLogin
         ])
 
         Map result = dispatcher.runSync('issueProductionRunTaskComponent', [
-            workEffortId: 'WE_ATTACKER_FLUID', productId: 'II_MAT_A_COST',
+            workEffortId: 'WE_ISSUING_FLUID', productId: 'II_MAT_A_COST',
             lotId: 'LOT_MANUAL_01', quantity: 5.0, failIfItemsAreNotAvailable: 'Y', userLogin: userLogin
         ], 0, true)
 
@@ -600,12 +603,12 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         item.set('locationSeqId', 'TLOC_01')
         item.store()
         dispatcher.runSync('reserveWorkEffortInventoryItem', [
-            workEffortId: 'WE_VICTIM', productId: 'II_MAT_A_COST', facilityId: 'WH_TRADITIONAL',
+            workEffortId: 'WE_AFFECTED', productId: 'II_MAT_A_COST', facilityId: 'WH_TRADITIONAL',
             inventoryItemId: 'II_MAN_STRICT', quantity: 10.0, userLogin: userLogin
         ])
 
         Map result = dispatcher.runSync('issueProductionRunTaskComponent', [
-            workEffortId: 'WE_ATTACKER_STRICT', productId: 'II_MAT_A_COST',
+            workEffortId: 'WE_ISSUING_STRICT', productId: 'II_MAT_A_COST',
             locationSeqId: 'TLOC_01', quantity: 5.0, failIfItemsAreNotAvailable: 'N', userLogin: userLogin
         ], 0, true)
 
@@ -613,25 +616,25 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         String error = ServiceUtil.getErrorMessage(result)
         assert error.contains('Materials Not Available')
                 || error.contains('shortfall')
-                || error.contains('forbids inventory theft') :
-                "Error should contain 'Materials Not Available' or 'forbids inventory theft'. Got: ${error}"
+                || error.contains('forbids inventory reallocation') :
+                "Error should contain 'Materials Not Available' or 'forbids inventory reallocation'. Got: ${error}"
     }
 
     void testM6_SelfConsumptionSuccessInStrictMode() {
         setUpInventory('WH_TRADITIONAL', 'II_MAT_A_COST', 'II_MAN_STRICT', 10.0)
 
         dispatcher.runSync('reserveWorkEffortInventoryItem', [
-            workEffortId: 'WE_ATTACKER_STRICT', productId: 'II_MAT_A_COST', facilityId: 'WH_TRADITIONAL',
+            workEffortId: 'WE_ISSUING_STRICT', productId: 'II_MAT_A_COST', facilityId: 'WH_TRADITIONAL',
             inventoryItemId: 'II_MAN_STRICT', quantity: 10.0, userLogin: userLogin
         ])
 
         Map result = dispatcher.runSync('issueProductionRunTaskComponent', [
-            workEffortId: 'WE_ATTACKER_STRICT', productId: 'II_MAT_A_COST',
+            workEffortId: 'WE_ISSUING_STRICT', productId: 'II_MAT_A_COST',
             inventoryItemId: 'II_MAN_STRICT', quantity: 5.0, failIfItemsAreNotAvailable: 'Y', userLogin: userLogin
         ])
 
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', 'WE_ATTACKER_STRICT', 5.0, 5.0, 0.0, 'WH_TRADITIONAL')
+        assertInventoryIntegrity('II_MAT_A_COST', 'WE_ISSUING_STRICT', 5.0, 5.0, 0.0, 'WH_TRADITIONAL')
     }
 
     void testS5_7_NullPolicyDefaultsToStrict() {
@@ -641,15 +644,15 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y'
         ])
 
-        String thiefWeId = setUpProductionRun('II_PROD_MANUF', 10.0, facId)
+        String issuingWeId = setUpProductionRun('II_PROD_MANUF', 10.0, facId)
 
         Map impactResult = dispatcher.runSync('getProductionRunTaskForceIssueImpact', [
-            workEffortId: thiefWeId, facilityId: facId, productId: 'II_MAT_A_COST', userLogin: userLogin
+            workEffortId: issuingWeId, facilityId: facId, productId: 'II_MAT_A_COST', userLogin: userLogin
         ])
 
         assert ServiceUtil.isSuccess(impactResult)
         assert impactResult.policyViolation != null : 'Should contain a policyViolation message'
-        assert impactResult.policyViolation.contains('forbidden') : 'Message should explain that theft is forbidden'
+        assert impactResult.policyViolation.contains('forbidden') : 'Message should explain that reallocation is forbidden'
     }
 
     void testFacilityPolicyPersistence() {
@@ -657,22 +660,22 @@ class InventoryIssuanceTests extends InventoryIssuanceTestSupport {
         storeFacility([
             facilityId: facId, facilityName: facId, facilityTypeId: 'WAREHOUSE',
             ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y',
-            allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'
+            allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'Y'
         ])
 
         GenericValue facility = from('Facility').where('facilityId', facId).queryOne()
         assert facility != null : 'Facility should be created'
-        assert facility.allowInventoryTheft == 'Y' : 'allowInventoryTheft should be Y'
+        assert facility.allowInventoryReallocation == 'Y' : 'allowInventoryReallocation should be Y'
         assert facility.reconcilePrunBackorders == 'Y' : 'reconcilePrunBackorders should be Y'
 
-        facility.set('allowInventoryTheft', 'N')
+        facility.set('allowInventoryReallocation', 'N')
         facility.set('reconcilePrunBackorders', 'N')
         facility.store()
 
         facility.refresh()
-        assert facility.allowInventoryTheft == 'N' : 'allowInventoryTheft should be N after update'
+        assert facility.allowInventoryReallocation == 'N' : 'allowInventoryReallocation should be N after update'
         assert facility.reconcilePrunBackorders == 'N' : 'reconcilePrunBackorders should be N after update'
-        assert facility.allowInventoryTheft == 'N'
+        assert facility.allowInventoryReallocation == 'N'
     }
 
 }
@@ -712,7 +715,7 @@ class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
 
         Map result = dispatcher.runSync('issueProductionRunTask', [workEffortId: weId, userLogin: userLogin])
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
+        assertInventoryIntegrity('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
     }
 
     void testS6_2_ManualReserve_IssueFailIfAvail_Y_Success() {
@@ -726,7 +729,7 @@ class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
             workEffortId: weId, failIfItemsAreNotAvailable: 'Y', userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
+        assertInventoryIntegrity('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
     }
 
     void testS6_3_ManualReserve_IssueFailIfAvail_N_Success() {
@@ -740,7 +743,7 @@ class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
             workEffortId: weId, failIfItemsAreNotAvailable: 'N', failIfItemsAreNotOnHand: 'N', userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
+        assertInventoryIntegrity('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
     }
 
     void testS6_4_NoReserve_DirectIssueDefault_Success() {
@@ -748,7 +751,7 @@ class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
 
         Map result = dispatcher.runSync('issueProductionRunTask', [workEffortId: weId, userLogin: userLogin])
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
+        assertInventoryIntegrity('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
     }
 
     void testS6_5_NoReserve_DirectIssueFailIfAvail_Y_Success() {
@@ -758,7 +761,7 @@ class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
             workEffortId: weId, failIfItemsAreNotAvailable: 'Y', userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
+        assertInventoryIntegrity('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
     }
 
     void testS6_6_NoReserve_DirectIssueFailIfAvail_N_Success() {
@@ -768,7 +771,7 @@ class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
             workEffortId: weId, failIfItemsAreNotAvailable: 'N', failIfItemsAreNotOnHand: 'N', userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
+        assertInventoryIntegrity('II_MAT_A_COST', weId, 20.0, 0.0, 80.0, 'WH_NO_AUTO_RES')
     }
 
     void testS6_7_Insufficient_ManualReserve_IssueDefault_Fail() {
@@ -806,7 +809,7 @@ class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
             workEffortId: weId, failIfItemsAreNotAvailable: 'N', failIfItemsAreNotOnHand: 'N', userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, -20.0, 'WH_NO_AUTO_RES')
+        assertInventoryIntegrity('II_MAT_A_COST', weId, 20.0, 0.0, -20.0, 'WH_NO_AUTO_RES')
     }
 
     void testS6_10_Insufficient_NoReserve_DirectIssueDefault_Fail() {
@@ -829,7 +832,7 @@ class InventoryIssuancePolicyMatrixTests extends InventoryIssuanceTestSupport {
             workEffortId: weId, failIfItemsAreNotAvailable: 'N', failIfItemsAreNotOnHand: 'N', userLogin: userLogin
         ])
         assert ServiceUtil.isSuccess(result)
-        assertTrinityOfTruth('II_MAT_A_COST', weId, 20.0, 0.0, -20.0, 'WH_NO_AUTO_RES')
+        assertInventoryIntegrity('II_MAT_A_COST', weId, 20.0, 0.0, -20.0, 'WH_NO_AUTO_RES')
     }
 
 }
@@ -874,18 +877,18 @@ class InventoryIssuanceTestSupport extends OFBizTestCase {
 
     protected void ensureFacilityPolicies() {
         storeFacility([facilityId: 'II_WH', facilityName: 'Test Warehouse', facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
         storeFacility([facilityId: 'WH_FLUID', facilityName: 'Fluid Warehouse', facilityTypeId: 'WAREHOUSE',
-            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'Y', reconcilePrunBackorders: 'Y'])
+            ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'Y'])
         storeFacility([facilityId: 'WH_TRADITIONAL', facilityName: 'Traditional Warehouse',
-            facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'N',
+            facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'N',
             reconcilePrunBackorders: 'N'])
         storeFacility([facilityId: 'WH_SAFE', facilityName: 'Safe Recovery Warehouse',
-            facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryTheft: 'N',
+            facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'Y', allowInventoryReallocation: 'N',
             reconcilePrunBackorders: 'Y'])
         storeFacility([facilityId: 'WH_NO_AUTO_RES', facilityName: 'No Auto Reservation Warehouse',
             facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'N',
-            allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
     }
 
     protected void setUpInventory(String facilityId, String productId, String itemId, BigDecimal quantity,
@@ -940,7 +943,7 @@ class InventoryIssuanceTestSupport extends OFBizTestCase {
         return value.setScale(2, RoundingMode.HALF_UP)
     }
 
-    protected void assertTrinityOfTruth(String productId, String workEffortId, BigDecimal expectedIssued,
+    protected void assertInventoryIntegrity(String productId, String workEffortId, BigDecimal expectedIssued,
                                       BigDecimal expectedRes, BigDecimal expectedAtp = null,
                                       String facilityId = 'II_WH') {
         List assignments = from('WorkEffortInventoryAssign')
@@ -1034,7 +1037,7 @@ class InventoryIssuanceTestSupport extends OFBizTestCase {
     protected String setUpNoAutoReserveProductionRun(String matAItemId, BigDecimal matAQuantity) {
         storeFacility([facilityId: 'WH_NO_AUTO_RES', facilityName: 'No Auto Reservation Warehouse',
             facilityTypeId: 'WAREHOUSE', ownerPartyId: 'II_COMPANY', autoReservePrun: 'N',
-            allowInventoryTheft: 'Y', reconcilePrunBackorders: 'N'])
+            allowInventoryReallocation: 'Y', reconcilePrunBackorders: 'N'])
         setUpInventory('WH_NO_AUTO_RES', 'II_MAT_A_COST', matAItemId, matAQuantity)
         setUpInventory('WH_NO_AUTO_RES', 'II_MAT_C_COST', "${matAItemId}_C", 100.0)
         return setUpProductionRun('II_PROD_MANUF', 10.0, 'WH_NO_AUTO_RES')

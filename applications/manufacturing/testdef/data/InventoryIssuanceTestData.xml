@@ -25,11 +25,11 @@ under the License.
     <PartyRole partyId="II_COMPANY" roleTypeId="OWNER"/>
 
     <!-- Test Facility Backbone -->
-    <Facility facilityId="II_WH" facilityName="Test Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="Y" allowInventoryTheft="Y" reconcilePrunBackorders="N"/>
-    <Facility facilityId="WH_FLUID" facilityName="Fluid Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="Y" allowInventoryTheft="Y" reconcilePrunBackorders="Y"/>
-    <Facility facilityId="WH_TRADITIONAL" facilityName="Traditional Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="Y" allowInventoryTheft="N" reconcilePrunBackorders="N"/>
-    <Facility facilityId="WH_SAFE" facilityName="Safe Recovery Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="Y" allowInventoryTheft="N" reconcilePrunBackorders="Y"/>
-    <Facility facilityId="WH_NO_AUTO_RES" facilityName="No Auto Reservation Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="N" allowInventoryTheft="Y" reconcilePrunBackorders="N"/>
+    <Facility facilityId="II_WH" facilityName="Test Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="Y" allowInventoryReallocation="Y" reconcilePrunBackorders="N"/>
+    <Facility facilityId="WH_FLUID" facilityName="Fluid Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="Y" allowInventoryReallocation="Y" reconcilePrunBackorders="Y"/>
+    <Facility facilityId="WH_TRADITIONAL" facilityName="Traditional Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="Y" allowInventoryReallocation="N" reconcilePrunBackorders="N"/>
+    <Facility facilityId="WH_SAFE" facilityName="Safe Recovery Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="Y" allowInventoryReallocation="N" reconcilePrunBackorders="Y"/>
+    <Facility facilityId="WH_NO_AUTO_RES" facilityName="No Auto Reservation Warehouse" facilityTypeId="WAREHOUSE" ownerPartyId="II_COMPANY" autoReservePrun="N" allowInventoryReallocation="Y" reconcilePrunBackorders="N"/>
 
 
     <!-- Product Backbone -->
@@ -86,7 +86,7 @@ under the License.
     <InventoryItem inventoryItemId="II_MAN_STRICT" inventoryItemTypeId="NON_SERIAL_INV_ITEM" productId="II_MAT_A_COST" facilityId="WH_TRADITIONAL" 
                    locationSeqId="TLOC_01" lotId="LOT_MANUAL_01" datetimeReceived="2020-01-01 00:00:00.0" quantityOnHandTotal="10.0" availableToPromiseTotal="10.0"/>
     
-    <!-- Item 2: Fluid Warehouse (Theft Allowed) -->
+    <!-- Item 2: Fluid Warehouse (Reallocation Allowed) -->
     <InventoryItem inventoryItemId="II_MAN_FLUID" inventoryItemTypeId="NON_SERIAL_INV_ITEM" productId="II_MAT_A_COST" facilityId="WH_FLUID" 
                    locationSeqId="FLOC_01" lotId="LOT_MANUAL_01" datetimeReceived="2020-01-01 00:00:00.0" quantityOnHandTotal="10.0" availableToPromiseTotal="10.0"/>
     
@@ -97,16 +97,15 @@ under the License.
 
     <!-- WorkEfforts for Testing -->
     <WorkEffort workEffortId="WE_PARENT" workEffortTypeId="PROD_ORDER_HEADER" currentStatusId="PRUN_RUNNING"/>
-    <WorkEffort workEffortId="WE_VICTIM" workEffortTypeId="PROD_ORDER_TASK" workEffortParentId="WE_PARENT" currentStatusId="PRUN_RUNNING" facilityId="WH_TRADITIONAL"/>
-    <WorkEffort workEffortId="WE_ATTACKER_STRICT" workEffortTypeId="PROD_ORDER_TASK" workEffortParentId="WE_PARENT" currentStatusId="PRUN_RUNNING" facilityId="WH_TRADITIONAL"/>
-    <WorkEffort workEffortId="WE_ATTACKER_FLUID" workEffortTypeId="PROD_ORDER_TASK" workEffortParentId="WE_PARENT" currentStatusId="PRUN_RUNNING" facilityId="WH_FLUID"/>
+    <WorkEffort workEffortId="WE_AFFECTED" workEffortTypeId="PROD_ORDER_TASK" workEffortParentId="WE_PARENT" currentStatusId="PRUN_RUNNING" facilityId="WH_TRADITIONAL"/>
+    <WorkEffort workEffortId="WE_ISSUING_STRICT" workEffortTypeId="PROD_ORDER_TASK" workEffortParentId="WE_PARENT" currentStatusId="PRUN_RUNNING" facilityId="WH_TRADITIONAL"/>
+    <WorkEffort workEffortId="WE_ISSUING_FLUID" workEffortTypeId="PROD_ORDER_TASK" workEffortParentId="WE_PARENT" currentStatusId="PRUN_RUNNING" facilityId="WH_FLUID"/>
 
-    <WorkEffortGoodStandard workEffortId="WE_VICTIM" productId="II_MAT_A_COST" workEffortGoodStdTypeId="PRUNT_PROD_NEEDED" fromDate="2020-01-01 00:00:00.0" estimatedQuantity="100.0"/>
-    <WorkEffortGoodStandard workEffortId="WE_ATTACKER_STRICT" productId="II_MAT_A_COST" workEffortGoodStdTypeId="PRUNT_PROD_NEEDED" fromDate="2020-01-01 00:00:00.0" estimatedQuantity="100.0"/>
-    <WorkEffortGoodStandard workEffortId="WE_ATTACKER_FLUID" productId="II_MAT_A_COST" workEffortGoodStdTypeId="PRUNT_PROD_NEEDED" fromDate="2020-01-01 00:00:00.0" estimatedQuantity="100.0"/>
+    <WorkEffortGoodStandard workEffortId="WE_AFFECTED" productId="II_MAT_A_COST" workEffortGoodStdTypeId="PRUNT_PROD_NEEDED" fromDate="2020-01-01 00:00:00.0" estimatedQuantity="100.0"/>
+    <WorkEffortGoodStandard workEffortId="WE_ISSUING_STRICT" productId="II_MAT_A_COST" workEffortGoodStdTypeId="PRUNT_PROD_NEEDED" fromDate="2020-01-01 00:00:00.0" estimatedQuantity="100.0"/>
+    <WorkEffortGoodStandard workEffortId="WE_ISSUING_FLUID" productId="II_MAT_A_COST" workEffortGoodStdTypeId="PRUNT_PROD_NEEDED" fromDate="2020-01-01 00:00:00.0" estimatedQuantity="100.0"/>
 
-    <!-- Enumeration required for Trinity Synchronization -->
-    <Enumeration description="Trinity of Truth Synchronization" enumCode="VAR_INTEGRITY_SYNC" enumId="VAR_INTEGRITY_SYNC" sequenceId="99" enumTypeId="IID_REASON"/>
+    <!-- Enumeration required for inventory integrity adjustments -->
+    <Enumeration description="Inventory integrity adjustment" enumCode="VAR_INTEGRITY_SYNC" enumId="VAR_INTEGRITY_SYNC" sequenceId="99" enumTypeId="IID_REASON"/>
 
 </entity-engine-xml>
-
