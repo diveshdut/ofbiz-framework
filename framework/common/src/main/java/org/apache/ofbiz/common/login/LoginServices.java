@@ -930,19 +930,9 @@ public class LoginServices {
         String password = loggedInUserLogin.getString("currentPassword");
         String passwordHint = loggedInUserLogin.getString("passwordHint");
 
-        // security: don't create a user login if the specified partyId (if not empty) already exists
-        // unless the logged in user has permission to do so (same partyId or PARTYMGR_CREATE)
-        if (UtilValidate.isNotEmpty(partyId)) {
-            if (!loggedInUserLogin.isEmpty()) {
-                // security check: userLogin partyId must equal partyId, or must have PARTYMGR_CREATE permission
-                if (!partyId.equals(loggedInUserLogin.getString("partyId"))) {
-                    errMsg = UtilProperties.getMessage(RESOURCE, "loginservices.party_with_party_id_exists_not_permission_create_user_login", locale);
-                    errorMessageList.add(errMsg);
-                }
-            } else {
-                errMsg = UtilProperties.getMessage(RESOURCE, "loginservices.must_logged_in_have_permission_create_user_login_exists", locale);
-                errorMessageList.add(errMsg);
-            }
+        if (loggedInUserLogin.isEmpty()) {
+            errMsg = UtilProperties.getMessage(RESOURCE, "loginservices.must_logged_in_have_permission_create_user_login_exists", locale);
+            errorMessageList.add(errMsg);
         }
 
         GenericValue newUserLogin = null;
