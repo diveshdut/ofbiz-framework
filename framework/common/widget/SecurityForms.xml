@@ -222,6 +222,7 @@ under the License.
                 <parameter param-name="userLoginId"/>
             </hyperlink>
         </field>
+        <field name="userFullName" sort-field="true"><display/></field>
         <field name="enabled" sort-field="true"><display/></field>
         <field name="hasLoggedOut" sort-field="true"><display/></field>
         <field name="disabledDateTime" sort-field="true"><display/></field>
