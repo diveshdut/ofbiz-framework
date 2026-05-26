@@ -64,14 +64,14 @@ public class CsrfUtilTests {
         when(session.getAttribute("userLogin")).thenReturn(userLogin);
 
         // with userLogin in session, test token map is not retrieved from session
-        resultMap = CsrfUtil.getTokenMap(request, "/partymgr");
+        resultMap = CsrfUtil.getTokenMap(request, "/webtools");
         assertNull(resultMap.get("uri_1"));
 
         GenericValue otherUserLogin = mock(GenericValue.class);
         when(otherUserLogin.getString("userLoginId")).thenReturn("other-test-user");
         when(session.getAttribute("userLogin")).thenReturn(otherUserLogin);
 
-        Map<String, String> otherUserResultMap = CsrfUtil.getTokenMap(request, "/partymgr");
+        Map<String, String> otherUserResultMap = CsrfUtil.getTokenMap(request, "/webtools");
         assertNotSame(resultMap, otherUserResultMap);
     }
 
@@ -89,11 +89,11 @@ public class CsrfUtilTests {
 
     @Test
     public void testGetRequestUriFromPath() {
-        String requestUri = CsrfUtil.getRequestUriFromPath("/viewprofile?partyId=Company");
-        assertEquals("viewprofile", requestUri);
+        String requestUri = CsrfUtil.getRequestUriFromPath("/editlogin?userLoginId=testuser");
+        assertEquals("editlogin", requestUri);
 
-        requestUri = CsrfUtil.getRequestUriFromPath("/partymgr/control/viewprofile");
-        assertEquals("viewprofile", requestUri);
+        requestUri = CsrfUtil.getRequestUriFromPath("/webtools/control/userprofile");
+        assertEquals("userprofile", requestUri);
 
         requestUri = CsrfUtil.getRequestUriFromPath("view/entityref_main#org.apache.ofbiz.accounting.budget");
         assertEquals("view/entityref_main", requestUri);
@@ -222,23 +222,23 @@ public class CsrfUtilTests {
         CsrfUtil.setTokenNameNonAjax("csrfToken");
 
         // test link without csrfToken
-        String url = CsrfUtil.addOrUpdateTokenInUrl("https://localhost:8443/catalog/control/login", "abcd");
-        assertEquals("https://localhost:8443/catalog/control/login?csrfToken=abcd", url);
+        String url = CsrfUtil.addOrUpdateTokenInUrl("https://localhost:8443/webtools/control/login", "abcd");
+        assertEquals("https://localhost:8443/webtools/control/login?csrfToken=abcd", url);
 
         // test link with query string and without csrfToken
         url = CsrfUtil.addOrUpdateTokenInUrl(
-                "https://localhost:8443/partymgr/control/visitdetail?visitId=10301", "abcd");
+                "https://localhost:8443/webtools/control/editlogin?userLoginId=testuser", "abcd");
         assertEquals(
-                "https://localhost:8443/partymgr/control/visitdetail?visitId=10301&csrfToken=abcd",
+                "https://localhost:8443/webtools/control/editlogin?userLoginId=testuser&csrfToken=abcd",
                 url);
 
         // test link with csrfToken
-        url = CsrfUtil.addOrUpdateTokenInUrl("https://localhost:8443/catalog/control/login?csrfToken=abcd", "efgh");
-        assertEquals("https://localhost:8443/catalog/control/login?csrfToken=efgh", url);
+        url = CsrfUtil.addOrUpdateTokenInUrl("https://localhost:8443/webtools/control/login?csrfToken=abcd", "efgh");
+        assertEquals("https://localhost:8443/webtools/control/login?csrfToken=efgh", url);
 
         // test link with csrfToken amd empty csrfToken replacement
-        url = CsrfUtil.addOrUpdateTokenInUrl("https://localhost:8443/catalog/control/login?csrfToken=abcd", "");
-        assertEquals("https://localhost:8443/catalog/control/login?csrfToken=", url);
+        url = CsrfUtil.addOrUpdateTokenInUrl("https://localhost:8443/webtools/control/login?csrfToken=abcd", "");
+        assertEquals("https://localhost:8443/webtools/control/login?csrfToken=", url);
     }
 
     @Test

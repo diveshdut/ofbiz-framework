@@ -136,11 +136,11 @@ public final class CsrfUtil {
         }
         String controlServletPart = "/control/"; // TODO remove with OFBIZ-11229
         if (requestUri.contains(controlServletPart)) {
-            // e.g. "/partymgr/control/viewprofile" to "viewprofile"
+            // e.g. "/webtools/control/userprofile" to "userprofile"
             requestUri = requestUri.substring(requestUri.indexOf(controlServletPart) + controlServletPart.length());
         }
         if (requestUri.startsWith("/")) {
-            // e.g. "/viewprofile" to "viewprofile"
+            // e.g. "/userprofile" to "userprofile"
             requestUri = requestUri.substring(1);
         }
         if (requestUri.contains("#")) {
