@@ -1133,21 +1133,9 @@ public final class LoginWorker {
             }
             try {
                 GenericValue autoUserLogin = EntityQuery.use(delegator).from("UserLogin").where("userLoginId", autoUserLoginId).queryOne();
-                GenericValue person = null;
-                GenericValue group = null;
                 if (autoUserLogin != null) {
                     session.setAttribute("autoUserLogin", autoUserLogin);
-
-                    ModelEntity modelUserLogin = autoUserLogin.getModelEntity();
-                    if (modelUserLogin.isField("partyId")) {
-                        person = EntityQuery.use(delegator).from("Person").where("partyId", autoUserLogin.getString("partyId")).queryOne();
-                        group = EntityQuery.use(delegator).from("PartyGroup").where("partyId", autoUserLogin.getString("partyId")).queryOne();
-                    }
-                }
-                if (person != null) {
-                    session.setAttribute("autoName", person.getString("firstName") + " " + person.getString("lastName"));
-                } else if (group != null) {
-                    session.setAttribute("autoName", group.getString("groupName"));
+                    session.setAttribute("autoName", autoUserLogin.getString("userFullName"));
                 }
             } catch (GenericEntityException e) {
                 Debug.logError(e, "Cannot get autoUserLogin information: " + e.getMessage(), MODULE);
