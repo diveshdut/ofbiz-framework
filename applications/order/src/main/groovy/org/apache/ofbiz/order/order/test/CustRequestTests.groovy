@@ -22,7 +22,6 @@ import org.apache.ofbiz.entity.GenericValue
 import org.apache.ofbiz.service.testtools.OFBizTestCase
 import org.apache.ofbiz.service.ServiceUtil
 
-@SuppressWarnings(['LineLength', 'UnnecessaryObjectReferences', 'UnnecessaryGString', 'PublicMethodsBeforeNonPublicMethods', 'ClassSize', 'MethodCount', 'ConsecutiveBlankLines', 'BlockEndsWithBlankLine', 'ClassEndsWithBlankLine'])
 class CustRequestTests extends OFBizTestCase {
 
     CustRequestTests(String name) {
@@ -88,7 +87,7 @@ class CustRequestTests extends OFBizTestCase {
         Map serviceResult = dispatcher.runSync('createCustRequestNote', serviceCtx)
         assert ServiceUtil.isSuccess(serviceResult)
 
-        assert serviceResult
+        assert serviceResult.noteId
         assert serviceResult.fromPartyId == 'DemoCustomer'
     }
 
@@ -102,7 +101,10 @@ class CustRequestTests extends OFBizTestCase {
         Map serviceResult = dispatcher.runSync('createCustRequestParty', serviceCtx)
         assert ServiceUtil.isSuccess(serviceResult)
 
-        assert serviceResult
+        GenericValue custRequestParty = from('CustRequestParty')
+                .where('custRequestId', '9000', 'partyId', 'Company', 'roleTypeId', 'OWNER')
+                .filterByDate().queryFirst()
+        assert custRequestParty
     }
 
     void testCreateCustRequestStatus() {
@@ -138,7 +140,7 @@ class CustRequestTests extends OFBizTestCase {
         Map serviceResult = dispatcher.runSync('getCustRequestsByRole', serviceCtx)
         assert ServiceUtil.isSuccess(serviceResult)
 
-        assert serviceResult
+        assert serviceResult.custRequestAndRoles instanceof List
     }
 
     void testCreateCustRequestContent() {
@@ -150,7 +152,10 @@ class CustRequestTests extends OFBizTestCase {
         Map serviceResult = dispatcher.runSync('createCustRequestContent', serviceCtx)
         assert ServiceUtil.isSuccess(serviceResult)
 
-        assert serviceResult
+        GenericValue custRequestContent = from('CustRequestContent')
+                .where('custRequestId', '9000', 'contentId', '100-ALT')
+                .filterByDate().queryFirst()
+        assert custRequestContent
     }
 
     void testCreateCustRequestAttribute() {
@@ -163,7 +168,11 @@ class CustRequestTests extends OFBizTestCase {
         Map serviceResult = dispatcher.runSync('createCustRequestAttribute', serviceCtx)
         assert ServiceUtil.isSuccess(serviceResult)
 
-        assert serviceResult
+        GenericValue custRequestAttribute = from('CustRequestAttribute')
+                .where('custRequestId', '9000', 'attrName', 'Test Name')
+                .queryOne()
+        assert custRequestAttribute
+        assert custRequestAttribute.attrValue == 'Test Value'
     }
 
     void testCopyCustRequestItem() {
@@ -175,6 +184,8 @@ class CustRequestTests extends OFBizTestCase {
         Map serviceResult = dispatcher.runSync('copyCustRequestItem', serviceCtx)
         assert ServiceUtil.isSuccess(serviceResult)
 
-        assert serviceResult
+        List<GenericValue> custRequestItems = from('CustRequestItem').where('custRequestId', '9000').queryList()
+        assert custRequestItems.size() > 1
     }
+
 }
