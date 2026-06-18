@@ -3565,6 +3565,7 @@ under the License.
       <field name="serviceName" type="long-varchar"></field>
       <field name="quantity" type="fixed-point"></field>
       <field name="amount" type="fixed-point"></field>
+      <field name="maxDiscountAmount" type="fixed-point"></field>
       <field name="productId" type="id"></field>
       <field name="partyId" type="id"></field>
       <field name="useCartQuantity" type="indicator"></field>

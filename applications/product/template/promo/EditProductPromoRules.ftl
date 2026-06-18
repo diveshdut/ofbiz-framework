@@ -314,6 +314,7 @@ under the License.
                     <input type="hidden" name="orderAdjustmentTypeId" value="${(productPromoAction.orderAdjustmentTypeId)!}" />
                     ${uiLabelMap.ProductQuantity}:&nbsp;<input type="text" size="5" name="quantity" value="${(productPromoAction.quantity)!}" />
                     ${uiLabelMap.ProductAmount}:&nbsp;<input type="text" size="5" name="amount" value="${(productPromoAction.amount)!}" />
+                    ${uiLabelMap.ProductMaxDiscountAmount}:&nbsp;<input type="text" size="5" name="maxDiscountAmount" value="${(productPromoAction.maxDiscountAmount)!}" />
                     <br/>
                     ${uiLabelMap.ProductItemId}:&nbsp;<@htmlTemplate.lookupField value="${(productPromoAction.productId)!}" formName="updateProductPromoAction_${productPromoRule_index}_${productPromoAction_index}" name="productId" id="productId" fieldFormName="LookupProduct"/>
                     <br/>
@@ -450,6 +451,7 @@ under the License.
                     <input type="hidden" name="orderAdjustmentTypeId" value="PROMOTION_ADJUSTMENT" />
                     ${uiLabelMap.ProductQuantity}:&nbsp;<input type="text" size="5" name="quantity" />
                     ${uiLabelMap.ProductAmount}:&nbsp;<input type="text" size="5" name="amount" />
+                    ${uiLabelMap.ProductMaxDiscountAmount}:&nbsp;<input type="text" size="5" name="maxDiscountAmount" />
                     <br/>
                     ${uiLabelMap.ProductItemId}:<@htmlTemplate.lookupField formName="createProductPromoAction" name="productId" id="productId" fieldFormName="LookupProduct"/>
                     <br/>
