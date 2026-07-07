@@ -20,13 +20,18 @@ package org.apache.ofbiz.ws.rs.util;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.apache.ofbiz.base.util.UtilMisc;
 import org.apache.ofbiz.base.util.UtilProperties;
 import org.apache.ofbiz.base.util.UtilValidate;
+import org.apache.ofbiz.entity.GenericEntityException;
+import org.apache.ofbiz.entity.util.EntityListIterator;
+import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.service.ModelService;
 import org.apache.ofbiz.ws.rs.core.ResponseStatus;
 import org.apache.ofbiz.ws.rs.response.Error;
@@ -40,6 +45,9 @@ import jakarta.ws.rs.core.Response.ResponseBuilder;
 public final class RestApiUtil {
 
     private static final String DEFAULT_MSG_UI_LABEL_RESOURCE = "ApiUiLabels";
+    private static final int DEFAULT_PAGE_INDEX = 0;
+    private static final int DEFAULT_PAGE_SIZE = 20;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private RestApiUtil() {
 
@@ -101,6 +109,103 @@ public final class RestApiUtil {
             }
         });
         return result;
+    }
+
+    /**
+     * Extracts normalized paging parameters from an OFBiz REST parameter map.
+     * Supports both REST-style {@code pageIndex/pageSize} and legacy
+     * {@code VIEW_INDEX/VIEW_SIZE} names, matched case-insensitively.
+     *
+     * @param parameters the request or service parameter map
+     * @return a map containing normalized {@code pageIndex} and {@code pageSize}
+     */
+    public static Map<String, Integer> getPagingParameters(Map<String, ?> parameters) {
+        Integer pageIndexValue = UtilMisc.toIntegerObject(getParameterValueIgnoreCase(parameters, "pageIndex", "VIEW_INDEX"));
+        Integer pageSizeValue = UtilMisc.toIntegerObject(getParameterValueIgnoreCase(parameters, "pageSize", "VIEW_SIZE"));
+        int pageIndex = pageIndexValue != null ? pageIndexValue : DEFAULT_PAGE_INDEX;
+        int pageSize = pageSizeValue != null ? pageSizeValue : DEFAULT_PAGE_SIZE;
+        if (pageIndex < 0) {
+            pageIndex = DEFAULT_PAGE_INDEX;
+        }
+        if (pageSize < 1) {
+            pageSize = DEFAULT_PAGE_SIZE;
+        } else if (pageSize > MAX_PAGE_SIZE) {
+            pageSize = MAX_PAGE_SIZE;
+        }
+        Map<String, Integer> paging = new LinkedHashMap<>();
+        paging.put("pageIndex", pageIndex);
+        paging.put("pageSize", pageSize);
+        return paging;
+    }
+
+    /**
+     * Executes an {@link EntityQuery} and returns one page using OFBiz's native
+     * {@link EntityListIterator#getPartialList(int, int)} support.
+     *
+     * @param query the entity query to page
+     * @param pageIndex zero-based page index
+     * @param pageSize the requested number of rows to return
+     * @return the current page rows, or an empty list when no rows match
+     * @throws GenericEntityException if the entity query fails
+     */
+    public static List<?> getPartialList(EntityQuery query, int pageIndex, int pageSize) throws GenericEntityException {
+        int normalizedPageIndex = Math.max(pageIndex, DEFAULT_PAGE_INDEX);
+        int normalizedPageSize = pageSize < 1 ? DEFAULT_PAGE_SIZE : Math.min(pageSize, MAX_PAGE_SIZE);
+        int lowIndex = (normalizedPageIndex * normalizedPageSize) + 1;
+        int highIndex = (normalizedPageIndex + 1) * normalizedPageSize;
+        try (EntityListIterator iterator = query.cursorScrollInsensitive().maxRows(highIndex).queryIterator()) {
+            List<?> rows = iterator.getPartialList(lowIndex, normalizedPageSize);
+            return rows != null ? rows : new ArrayList<>();
+        }
+    }
+
+    /**
+     * Builds a standard OFBiz REST paging result map with a caller-supplied row
+     * list field name.
+     *
+     * @param pageIndex zero-based page index
+     * @param pageSize number of rows requested
+     * @param totalCount total rows matching the query
+     * @param listName response key for the row list
+     * @param rows current page rows
+     * @return a paging result map containing metadata and the row list
+     */
+    public static Map<String, Object> getPagedResult(int pageIndex, int pageSize, long totalCount, String listName, List<?> rows) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("pageIndex", pageIndex);
+        result.put("pageSize", pageSize);
+        result.put("totalCount", totalCount);
+        result.put("hasNext", ((long) (pageIndex + 1) * pageSize) < totalCount);
+        result.put(listName, rows != null ? rows : new ArrayList<>());
+        return result;
+    }
+
+    /**
+     * Finds a parameter value by one or more possible parameter names, first
+     * trying exact key matches and then case-insensitive key matches.
+     *
+     * @param parameters the request or service parameter map
+     * @param names accepted parameter names or aliases
+     * @return the matching parameter value, or {@code null} when no key matches
+     */
+    public static Object getParameterValueIgnoreCase(Map<String, ?> parameters, String... names) {
+        if (parameters == null || parameters.isEmpty()) {
+            return null;
+        }
+        for (String name : names) {
+            if (parameters.containsKey(name)) {
+                return parameters.get(name);
+            }
+        }
+        for (Map.Entry<String, ?> entry : parameters.entrySet()) {
+            String key = entry.getKey();
+            for (String name : names) {
+                if (key != null && key.equalsIgnoreCase(name)) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return null;
     }
 
     /**
